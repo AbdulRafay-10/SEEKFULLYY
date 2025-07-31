@@ -1,0 +1,42 @@
+
+
+:root {
+  --primary-color: #c10201;
+  --primary-color-light: #f4d1d1;
+  --text-color: var(--primary-color);
+  --hover-underline: var(--primary-color);
+  --bg-color: #ffffff;
+}
+
+/* Theme-based utilities */
+.button {
+  background-color: var(--primary-color);
+  color: white;
+  transition: 0.3s;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.button:hover {
+  background-color: var(--primary-color-light);
+}
+
+.link {
+  color: var(--text-color);
+  position: relative;
+  text-decoration: none;
+}
+.link::after {
+  content: "";
+  position: absolute;
+  width: 0%;
+  height: 2px;
+  bottom: -2px;
+  background-color: var(--hover-underline);
+  transition: 0.3s;
+}
+.link:hover::after {
+  width: 100%;
+}
