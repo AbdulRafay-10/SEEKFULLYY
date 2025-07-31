@@ -70,6 +70,8 @@ const Canvas = ({
   setSelectedTextElement,
   onTransformationStart, // New prop
   onTransformationEnd, // New prop
+  onTextElementClick, // ADDED THIS PROP
+  canvasIndex, // Ensure canvasIndex is available
 }) => {
   const canvasRef = useRef(null)
   const canvasWidth = customSize.width
@@ -246,6 +248,7 @@ const Canvas = ({
 
     // Draw all elements
     elements.forEach((element) => {
+      // NEW: Only draw text element if it's NOT currently being edited
       if (element.type === "text" && element.id === editingTextElementId) {
         return
       }
@@ -430,7 +433,7 @@ const Canvas = ({
             element.width,
             lineHeight,
             element.align,
-            element.letterSpacing || textSettings.letterSpacing,
+            element.letterSpacing,
           )
         }
 
@@ -567,7 +570,7 @@ const Canvas = ({
       boxHeight = measuredHeight
     }
 
-    ctx.strokeStyle = primaryColor
+    ctx.strokeStyle = "#000000" // Black border
     ctx.lineWidth = 2
     ctx.setLineDash([5, 5])
     ctx.strokeRect(
@@ -589,9 +592,9 @@ const Canvas = ({
       },
     ]
     corners.forEach((corner) => {
-      ctx.fillStyle = "#ffffff"
+      ctx.fillStyle = "#000000" // Black handles
       ctx.fillRect(corner.x, corner.y, handleSize, handleSize)
-      ctx.strokeStyle = primaryColor
+      ctx.strokeStyle = "#000000" // Black handle borders
       ctx.lineWidth = 2
       ctx.strokeRect(corner.x, corner.y, handleSize, handleSize)
     })
@@ -784,6 +787,11 @@ const Canvas = ({
         setIsDragging(true)
         setStartPoint({ x, y })
         onTransformationStart() // Signal start of continuous operation
+
+        // Call onTextElementClick if it's a text element
+        if (clickedElement.type === "text" && onTextElementClick) {
+          onTextElementClick(clickedElement, canvasIndex) // Pass element and its canvas index
+        }
         return
       } else {
         setSelectedElement(null)
@@ -868,6 +876,83 @@ const Canvas = ({
     }
   }
 
+  useEffect(() => {
+    if (editingText) {
+      cursorIntervalRef.current = setInterval(() => {
+        setCursorVisible((prev) => !prev)
+      }, 500)
+      return () => clearInterval(cursorIntervalRef.current)
+    }
+  }, [editingText])
+
+  const handleDoubleClick = (e) => {
+    if (isLocked || activeTool !== "select") return
+
+    const { x, y } = getMousePosition(e)
+
+    let clickedElement = null
+    for (let i = elements.length - 1; i >= 0; i--) {
+      if (isPointInElement(x, y, elements[i])) {
+        clickedElement = elements[i]
+        break
+      }
+    }
+
+    if (clickedElement && clickedElement.type === "text") {
+      setSelectedElement(clickedElement)
+      const canvasElement = canvasRef.current
+      const canvasRect = canvasElement.getBoundingClientRect() // Viewport-relative rect of the canvas
+
+      const scaleX = canvasRect.width / canvasElement.width
+      const scaleY = canvasRect.height / canvasElement.height
+
+      // Calculate the actual rendered bounding box of the text element in canvas coordinates
+      const tempCanvas = document.createElement("canvas")
+      const tempCtx = tempCanvas.getContext("2d")
+      tempCtx.font = `${clickedElement.bold ? "bold " : ""}${clickedElement.italic ? "italic " : ""}${clickedElement.fontSize}px ${clickedElement.fontFamily}`
+      tempCtx.letterSpacing = `${clickedElement.letterSpacing || textSettings.letterSpacing}px`
+      let textToDraw = clickedElement.text || ""
+      if (clickedElement.uppercase) textToDraw = textToDraw.toUpperCase()
+
+      const unwrappedTextMetrics = tempCtx.measureText(textToDraw)
+      const unwrappedTextWidth = unwrappedTextMetrics.width
+
+      // Calculate single line height based on font size and line height
+      const singleLineHeight =
+        (clickedElement.fontSize || textSettings.fontSize) *
+        (clickedElement.lineHeight || textSettings.lineHeight || 1.2)
+
+      let boxX_canvas = clickedElement.x
+      if (clickedElement.align === "center") {
+        boxX_canvas = clickedElement.x + (clickedElement.width - unwrappedTextWidth) / 2
+      } else if (clickedElement.align === "right") {
+        boxX_canvas = clickedElement.x + (clickedElement.width - unwrappedTextWidth)
+      }
+      const boxY_canvas = clickedElement.y
+      // Add a more generous buffer to the unwrapped width to account for textarea padding/borders
+      const PADDING_BUFFER = 40 // Increased buffer
+      const boxWidth_canvas = unwrappedTextWidth + PADDING_BUFFER
+      const boxHeight_canvas = singleLineHeight // Use single line height
+
+      // Convert canvas bounding box to viewport screen coordinates
+      const screenX_viewport = boxX_canvas * scaleX + canvasRect.left
+      const screenY_viewport = boxY_canvas * scaleY + canvasRect.top
+      const screenWidth_viewport = boxWidth_canvas * scaleX
+      const screenHeight_viewport = boxHeight_canvas * scaleY
+
+      onStartTextEdit(
+        clickedElement.id,
+        clickedElement.text,
+        screenWidth_viewport,
+        screenHeight_viewport,
+        screenX_viewport,
+        screenY_viewport,
+        true,
+        primaryColor,
+      )
+    }
+  }
+
   const handleMouseMove = (e) => {
     if (isLocked || editingTextElementId) return
 
@@ -904,7 +989,7 @@ const Canvas = ({
       if (selectedElement.type === "text") {
         const tempCanvas = document.createElement("canvas")
         const tempCtx = tempCanvas.getContext("2d")
-        tempCtx.font = `${selectedElement.bold ? "bold " : ""}${selectedElement.italic ? "italic " : ""}${selectedElement.fontSize || textSettings.fontSize}px ${selectedElement.fontFamily || textSettings.fontFamily}`
+        tempCtx.font = `${selectedElement.bold ? "bold " : ""}${selectedElement.italic ? "italic " : ""}${selectedElement.fontSize || textSettings.fontSize}px ${textSettings.fontFamily}`
         const { width: measuredWidth, height: measuredHeight } = measureWrappedText(
           tempCtx,
           selectedElement.text || "",
@@ -1118,10 +1203,6 @@ const Canvas = ({
       currentY += lineHeight
     })
     context.letterSpacing = "0px"
-  }
-
-  const handleDoubleClick = (e) => {
-    // Placeholder for handleDoubleClick logic
   }
 
   return (

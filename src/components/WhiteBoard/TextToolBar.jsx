@@ -126,36 +126,41 @@ const TextToolbar = ({
 
   // FIXED: Improved font size handling
   const handleFontSizeChange = (increment) => {
-    const currentFontSize = Math.round(currentSettings.fontSize) // Round to nearest integer
-    let newFontSize
+  const currentFontSize = Math.round(currentSettings.fontSize) // Round to nearest integer
+  let newFontSize
 
-    if (increment) {
-      // Find next larger size or increment by 1 if not in predefined sizes
-      const nextSize = fontSizes.find((size) => size > currentFontSize)
-      newFontSize = nextSize || Math.min(currentFontSize + 1, 120)
-    } else {
-      // Find next smaller size or decrement by 1 if not in predefined sizes
-      const prevSize = [...fontSizes].reverse().find((size) => size < currentFontSize)
-      newFontSize = prevSize || Math.max(currentFontSize - 1, 8)
-    }
-
-    if (selectedElementProps) {
-      onApplyStyleToSelectedText({ fontSize: newFontSize })
-    } else {
-      onTextSettingsChange({ ...textSettings, fontSize: newFontSize })
-    }
+  if (increment) {
+    // Find next larger size or increment by 2 if not in predefined sizes
+    const nextSize = fontSizes.find((size) => size > currentFontSize)
+    newFontSize = nextSize || Math.min(currentFontSize + 2, 120) // Changed from +1 to +2
+  } else {
+    // Find next smaller size or decrement by 2 if not in predefined sizes
+    const prevSize = [...fontSizes].reverse().find((size) => size < currentFontSize)
+    newFontSize = prevSize || Math.max(currentFontSize - 2, 8) // Changed from -1 to -2
   }
+
+  if (selectedElementProps) {
+    onApplyStyleToSelectedText({ fontSize: newFontSize })
+  } else {
+    onTextSettingsChange({ ...textSettings, fontSize: newFontSize })
+  }
+}
 
   // FIXED: Direct font size input handling
   const handleDirectFontSizeChange = (value) => {
-    const newFontSize = Math.max(8, Math.min(Number.parseInt(value) || 8, 120))
-
-    if (selectedElementProps) {
-      onApplyStyleToSelectedText({ fontSize: newFontSize })
-    } else {
-      onTextSettingsChange({ ...textSettings, fontSize: newFontSize })
-    }
+  let newFontSize = Math.max(8, Math.min(Number.parseInt(value) || 8, 120))
+  
+  // If the value is odd, make it even by rounding to nearest multiple of 2
+  if (newFontSize % 2 !== 0) {
+    newFontSize = Math.round(newFontSize / 2) * 2
   }
+
+  if (selectedElementProps) {
+    onApplyStyleToSelectedText({ fontSize: newFontSize })
+  } else {
+    onTextSettingsChange({ ...textSettings, fontSize: newFontSize })
+  }
+}
 
   const handleLetterSpacingChange = (value) => {
     const newLetterSpacing = Number(value)
@@ -309,16 +314,17 @@ const TextToolbar = ({
               <Minus className="w-4 h-4" />
             </button>
             <input
-              type="number"
-              min="8"
-              max="120"
-              value={Math.round(currentSettings.fontSize)}
-              onChange={(e) => handleDirectFontSizeChange(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              onFocus={(e) => e.target.select()} // Select all text when focused
-              className="px-2 py-2 text-sm font-medium min-w-[50px] text-center border-0 outline-none bg-transparent"
-              style={{ appearance: "textfield" }}
-            />
+  type="number"
+  min="8"
+  max="120"
+  step="2" // Add this to enforce stepping by 2
+  value={Math.round(currentSettings.fontSize)}
+  onChange={(e) => handleDirectFontSizeChange(e.target.value)}
+  onClick={(e) => e.stopPropagation()}
+  onFocus={(e) => e.target.select()}
+  className="px-2 py-2 text-sm font-medium min-w-[50px] text-center border-0 outline-none bg-transparent"
+  style={{ appearance: "textfield" }}
+/>
             <button
               onClick={(e) => {
                 e.preventDefault()

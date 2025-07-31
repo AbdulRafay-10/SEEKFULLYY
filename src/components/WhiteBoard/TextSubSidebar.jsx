@@ -1,7 +1,7 @@
 const TextSubSidebar = ({ onAddText, onAddHeading, onAddSubheading, onAddBodyText, onClose }) => {
   return (
     <div
-      className="fixed top-24  right-0 z-[9999] w-72 bg-white rounded-l-2xl shadow-2xl border border-gray-200 px-6 py-8 flex flex-col gap-6 animate-fadeIn text-sub-sidebar"
+      className="fixed top-42  right-0 z-[9999] w-72 bg-white rounded-l-2xl shadow-2xl border border-gray-200 px-6 py-8 flex flex-col gap-6 animate-fadeIn text-sub-sidebar"
       style={{
         minHeight: "320px",
         boxShadow: "0 8px 32px rgba(0,0,0,0.12)",

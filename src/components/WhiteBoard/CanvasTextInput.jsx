@@ -24,8 +24,8 @@ const CanvasTextInput = forwardRef(
         textareaRef.current.style.fontFamily = textSettings.fontFamily
         textareaRef.current.style.fontSize = `${textSettings.fontSize}px`
 
-        // Focus and select text after a small delay to ensure proper rendering
-        setTimeout(() => {
+        // Use requestAnimationFrame to ensure DOM is ready for accurate measurements
+        requestAnimationFrame(() => {
           if (textareaRef.current) {
             textareaRef.current.focus()
             if (
@@ -36,9 +36,9 @@ const CanvasTextInput = forwardRef(
             ) {
               textareaRef.current.select()
             }
-            adjustHeight()
+            adjustHeight() // Adjust height immediately after focus/select
           }
-        }, 10)
+        })
       }
     }, [isEditing, initialText, textSettings])
 
@@ -50,28 +50,34 @@ const CanvasTextInput = forwardRef(
       }
     }
 
-    const handleInputChange = (e) => {
-      setText(e.target.value)
-      setTimeout(adjustHeight, 0) // Adjust height after text change
+    const handleComplete = (cancelled = false) => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect()
+        if (cancelled && onCancel) {
+          onCancel(text, rect)
+        } else if (onTextComplete) {
+          onTextComplete(text, rect)
+        }
+      }
     }
 
     const handleBlur = () => {
-      if (onTextComplete) {
-        onTextComplete(text, dimensions.width, dimensions.height, position.x, position.y)
-      }
+      handleComplete(false)
     }
 
     const handleKeyDown = (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault()
-        handleBlur()
+        handleComplete(false)
       }
       if (e.key === "Escape") {
         e.preventDefault()
-        if (onCancel) {
-          onCancel(text, dimensions.width, dimensions.height, position.x, position.y)
-        }
+        handleComplete(true)
       }
+    }
+
+    const handleInputChange = (e) => {
+      setText(e.target.value)
     }
 
     if (!isEditing) return null
@@ -95,9 +101,9 @@ const CanvasTextInput = forwardRef(
           onBlur={handleBlur}
           style={{
             width: `${dimensions.width}px`,
-            border: `2px solid ${primaryColor || "#000000"}`,
+            border: `2px dashed ${primaryColor || "#000000"}`,
             borderRadius: "4px",
-            padding: "8px",
+            padding: "0px",
             outline: "none",
             resize: "none",
             fontFamily: textSettings.fontFamily || "Arial",
@@ -108,7 +114,7 @@ const CanvasTextInput = forwardRef(
             textAlign: textSettings.align || "left",
             lineHeight: `${textSettings.lineHeight || 1.2}`,
             background: "rgba(255, 255, 255, 0.95)",
-            minHeight: "40px",
+            // Removed minHeight to allow dynamic height based on content
           }}
         />
       </div>

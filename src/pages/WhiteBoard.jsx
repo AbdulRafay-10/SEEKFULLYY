@@ -86,6 +86,7 @@ const WhiteBoard = () => {
   const canvasContainerRef = useRef(null)
   const textToolbarRef = useRef(null)
   const canvasTextInputRef = useRef(null)
+  const mainContentAreaRef = useRef(null) // NEW: Ref for the main content area
   const [elements, setElements] = useState([])
 
   const [pages, setPages] = useState([
@@ -153,6 +154,9 @@ const WhiteBoard = () => {
   const [selectedElement, setSelectedElement] = useState(null)
   const [selectedTextElement, setSelectedTextElement] = useState(null)
   const colorPickerJustOpenedRef = useRef(false)
+
+  // NEW: State to store screen coordinates for CanvasTextInput
+  const [editingTextScreenCoords, setEditingTextScreenCoords] = useState(null)
 
   // Sidebar states
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -666,6 +670,7 @@ const WhiteBoard = () => {
     setSelectedElement(null)
     setSelectedTextElement(null)
     setEditingTextElementId(null)
+    setEditingTextScreenCoords(null) // Clear coords on undo
   }
 
   const handleRedo = () => {
@@ -678,6 +683,7 @@ const WhiteBoard = () => {
     setSelectedElement(null)
     setSelectedTextElement(null)
     setEditingTextElementId(null)
+    setEditingTextScreenCoords(null) // Clear coords on redo
   }
 
   const handleSaveColor = (color) => {
@@ -702,6 +708,7 @@ const WhiteBoard = () => {
     setSelectedElement(null)
     setSelectedTextElement(null)
     setEditingTextElementId(null)
+    setEditingTextScreenCoords(null) // Clear coords on delete
     addHistorySnapshot(newPages) // Add to history
   }
 
@@ -725,6 +732,7 @@ const WhiteBoard = () => {
     setSelectedElement(null)
     setSelectedTextElement(null)
     setEditingTextElementId(null)
+    setEditingTextScreenCoords(null) // Clear coords on lock
     addHistorySnapshot(updatedPages) // Add to history
   }
 
@@ -884,10 +892,8 @@ const WhiteBoard = () => {
       setSelectedTextElement(newElement)
       setActiveTool("select")
 
-      // Start editing immediately with proper canvas context
-      setTimeout(() => {
-        setEditingTextElementId(newElementId)
-      }, 50)
+      // Directly set editingTextElementId. The useEffect below will handle coords.
+      setEditingTextElementId(newElementId)
     },
     [pages, selectedCanvasIdx, textSettings, canvasSize, addHistorySnapshot],
   )
@@ -969,6 +975,18 @@ const WhiteBoard = () => {
     input.click()
   }, [pages, selectedCanvasIdx, canvasSize.width, canvasSize.height, squareSettings, addHistorySnapshot])
 
+  // NEW: Store screen coordinates when text editing starts
+  const handleTextEditStarted = useCallback((text, screenWidth, screenHeight, screenX, screenY, isInitialEdit) => {
+    if (mainContentAreaRef.current) {
+      const parentRect = mainContentAreaRef.current.getBoundingClientRect()
+      const relativeX = screenX - parentRect.left
+      const relativeY = screenY - parentRect.top
+      setEditingTextScreenCoords({ x: relativeX, y: relativeY, width: screenWidth, height: screenHeight })
+    } else {
+      setEditingTextScreenCoords({ x: screenX, y: screenY, width: screenWidth, height: screenHeight })
+    }
+  }, [])
+
   // FIXED: Simplified text edit completion
   const handleTextEditFinished = useCallback(
     (elementId, newText, screenWidth, screenHeight, screenX, screenY, cancelled = false) => {
@@ -977,6 +995,7 @@ const WhiteBoard = () => {
 
       if (elementIndex === -1 || pages[selectedCanvasIdx]?.isLocked) {
         setEditingTextElementId(null)
+        setEditingTextScreenCoords(null) // Clear coords
         return
       }
 
@@ -991,6 +1010,7 @@ const WhiteBoard = () => {
         setSelectedElement(null)
         setSelectedTextElement(null)
         setEditingTextElementId(null)
+        setEditingTextScreenCoords(null) // Clear coords
         return
       }
 
@@ -1000,20 +1020,45 @@ const WhiteBoard = () => {
 
       if (canvasElement) {
         const canvasRect = canvasElement.getBoundingClientRect()
-        const containerRect = canvasContainerRef.current.getBoundingClientRect()
-        const scaleX = canvasElement.width / canvasRect.width
-        const scaleY = canvasElement.height / canvasRect.height
+        const canvasNativeWidth = canvasElement.width // Actual pixel width of the canvas
+        const canvasNativeHeight = canvasElement.height // Actual pixel height of the canvas
 
-        const canvasX = (screenX - (canvasRect.left - containerRect.left)) * scaleX
-        const canvasY = (screenY - (canvasRect.top - containerRect.top)) * scaleY
+        // Calculate scale based on rendered size vs native size
+        const scaleX = canvasNativeWidth / canvasRect.width
+        const scaleY = canvasNativeHeight / canvasRect.height
+
+        // Convert screen coordinates (relative to viewport) to canvas coordinates (relative to canvas's top-left corner in its native pixel space)
+        const canvasX = (screenX - canvasRect.left) * scaleX
+        const canvasY = (screenY - canvasRect.top) * scaleY
         const canvasWidth = screenWidth * scaleX
         const canvasHeight = screenHeight * scaleY
 
         updatedElement.text = newText
+        // When updating the element, we need to re-measure its actual content width and height
+        // to ensure it doesn't wrap unless explicitly resized by the user.
+        const tempCanvas = document.createElement("canvas")
+        const tempCtx = tempCanvas.getContext("2d")
+        tempCtx.font = `${updatedElement.bold ? "bold " : ""}${updatedElement.italic ? "italic " : ""}${updatedElement.fontSize}px ${updatedElement.fontFamily}`
+        tempCtx.letterSpacing = `${updatedElement.letterSpacing || textSettings.letterSpacing}px`
+        let textToDraw = updatedElement.text || ""
+        if (updatedElement.uppercase) textToDraw = textToDraw.toUpperCase()
+
+        const { width: newMeasuredWidth, height: newMeasuredHeight } = measureWrappedText(
+          tempCtx,
+          textToDraw,
+          Number.POSITIVE_INFINITY, // Allow infinite width to get true unwrapped width
+          updatedElement.fontSize,
+          updatedElement.fontFamily,
+          updatedElement.bold,
+          updatedElement.italic,
+          updatedElement.uppercase,
+          updatedElement.letterSpacing,
+        )
+
         updatedElement.x = canvasX
         updatedElement.y = canvasY
-        updatedElement.width = canvasWidth
-        updatedElement.height = canvasHeight
+        updatedElement.width = newMeasuredWidth // Use the newly measured width
+        updatedElement.height = newMeasuredHeight // Use the newly measured height
         updatedElement.canvasIndex = selectedCanvasIdx // Ensure canvas association
       }
 
@@ -1024,6 +1069,7 @@ const WhiteBoard = () => {
       addHistorySnapshot(updatedPages) // Add to history for discrete change
       // FIXED: Clear editing state but keep element selected for toolbar
       setEditingTextElementId(null)
+      setEditingTextScreenCoords(null) // Clear coords
       setSelectedElement(updatedElement)
       setSelectedTextElement(updatedElement)
     },
@@ -1068,26 +1114,69 @@ const WhiteBoard = () => {
       setSelectedElement(newTextElement)
       setSelectedTextElement(newTextElement)
 
-      // Start editing immediately
-      setTimeout(() => {
-        setEditingTextElementId(newTextElement.id)
-      }, 50)
+      // Directly set editingTextElementId. The useEffect below will handle coords.
+      setEditingTextElementId(newTextElement.id)
     },
     [pages, selectedCanvasIdx, textSettings, addHistorySnapshot],
   )
 
   const currentPageData = pages[selectedCanvasIdx] || pages[0] || {}
 
-  const handleTextEditStarted = useCallback(
-    (text, screenWidth, screenHeight, screenX, screenY, isInitialEdit) => {
-      // Add border when editing starts
-      setTextSettings((prev) => ({
-        ...prev,
-        border: `2px solid ${primaryColor}`,
-      }))
-    },
-    [primaryColor],
-  )
+  // NEW useEffect to handle initial text editing for newly added elements
+  useEffect(() => {
+    if (editingTextElementId && selectedTextElement) {
+      // Ensure the canvas element is rendered before trying to get its position
+      const canvasElement = canvasContainerRef.current?.querySelectorAll(".canvas-element")[selectedCanvasIdx]
+      if (canvasElement) {
+        // Use requestAnimationFrame to ensure the browser has rendered the new element
+        requestAnimationFrame(() => {
+          const canvasRect = canvasElement.getBoundingClientRect()
+
+          // Calculate the actual rendered bounding box of the text element in canvas coordinates
+          const tempCanvas = document.createElement("canvas")
+          const tempCtx = tempCanvas.getContext("2d")
+          tempCtx.font = `${selectedTextElement.bold ? "bold " : ""}${selectedTextElement.italic ? "italic " : ""}${selectedTextElement.fontSize}px ${selectedTextElement.fontFamily}`
+          let textToDraw = selectedTextElement.text || ""
+          if (selectedTextElement.uppercase) textToDraw = textToDraw.toUpperCase()
+
+          const unwrappedTextMetrics = tempCtx.measureText(textToDraw)
+          const unwrappedTextWidth = unwrappedTextMetrics.width
+
+          // Calculate single line height based on font size and line height
+          const singleLineHeight =
+            (selectedTextElement.fontSize || textSettings.fontSize) *
+            (selectedTextElement.lineHeight || textSettings.lineHeight || 1.2)
+
+          let boxX_canvas = selectedTextElement.x
+          if (selectedTextElement.align === "center") {
+            boxX_canvas = selectedTextElement.x + (selectedTextElement.width - unwrappedTextWidth) / 2
+          } else if (selectedTextElement.align === "right") {
+            boxX_canvas = selectedTextElement.x + (selectedTextElement.width - unwrappedTextWidth)
+          }
+          const boxY_canvas = selectedTextElement.y
+          const PADDING_BUFFER = 40 // Consistent increased buffer
+          const boxWidth_canvas = unwrappedTextWidth + PADDING_BUFFER
+          const boxHeight_canvas = singleLineHeight // Use single line height
+
+          // Convert canvas bounding box to viewport screen coordinates
+          const screenX_viewport = boxX_canvas * (canvasRect.width / canvasElement.width) + canvasRect.left
+          const screenY_viewport = boxY_canvas * (canvasRect.height / canvasElement.height) + canvasRect.top
+          const screenWidth_viewport = boxWidth_canvas * (canvasRect.width / canvasElement.width)
+          const screenHeight_viewport = boxHeight_canvas * (canvasRect.height / canvasElement.height)
+
+          // Call handleTextEditStarted to set the screen coordinates for CanvasTextInput
+          handleTextEditStarted(
+            selectedTextElement.text,
+            screenWidth_viewport,
+            screenHeight_viewport,
+            screenX_viewport,
+            screenY_viewport,
+            true, // isInitialEdit
+          )
+        })
+      }
+    }
+  }, [editingTextElementId, selectedTextElement, selectedCanvasIdx, handleTextEditStarted, canvasContainerRef])
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -1102,13 +1191,12 @@ const WhiteBoard = () => {
 
       if (editingTextElementId) {
         if (!clickedOnCanvasTextInput && !clickedOnTextToolbar) {
-          setTimeout(() => {
-            if (canvasTextInputRef.current?.blur) {
-              canvasTextInputRef.current.blur()
-            }
-          }, 50)
+          // Removed setTimeout here, relying on requestAnimationFrame in CanvasTextInput
+          if (canvasTextInputRef.current?.blur) {
+            canvasTextInputRef.current.blur()
+          }
+          return // Exit early if editing text and clicked outside text input/toolbar
         }
-        return
       }
 
       const clickedOnColorPicker = event.target.closest(".color-picker-sidebar")
@@ -1122,7 +1210,7 @@ const WhiteBoard = () => {
       const clickedOnShapesSidebar = event.target.closest(".shapes-sidebar")
       const clickedOnToolsButton = event.target.closest(".tools-button")
       const clickedOnNotesButton = event.target.closest(".notes-toggle-button")
-      const clickedOnTextSubSidebar = event.target.closest(".text-sub-sidebar")
+      const clickedOnTextSubSidebar = event.target.closest(".text-sub-sidebar") // Corrected class name
       const clickedOnHighlightPicker = event.target.closest(".highlight-color-picker-sidebar") // New: Highlight picker
 
       const clickedOnAnyInteractiveUI =
@@ -1162,6 +1250,7 @@ const WhiteBoard = () => {
         setIsNotesOpen(false)
       } else if (clickedOnCanvasElement && !selectedElement) {
         setEditingTextElementId(null)
+        setEditingTextScreenCoords(null) // Clear coords
       }
     }
 
@@ -1265,30 +1354,6 @@ const WhiteBoard = () => {
     }
   }
 
-  // Calculate screen coordinates for CanvasTextInput - use selectedCanvasIdx
-  const elementBeingEdited = pages[selectedCanvasIdx]?.elements.find((el) => el.id === editingTextElementId)
-  let textInputScreenX = 0
-  let textInputScreenY = 0
-  let textInputScreenWidth = 0
-
-  if (elementBeingEdited) {
-    // Find the correct canvas element for the selected canvas
-    const canvasElements = canvasContainerRef.current?.querySelectorAll(".canvas-element")
-    const canvasElement = canvasElements?.[selectedCanvasIdx]
-
-    if (canvasElement) {
-      const canvasRect = canvasElement.getBoundingClientRect()
-      const canvasNativeWidth = canvasElement.width
-      const containerRect = canvasContainerRef.current.getBoundingClientRect()
-
-      const scaleX = canvasRect.width / canvasNativeWidth
-
-      textInputScreenX = elementBeingEdited.x * scaleX + (canvasRect.left - containerRect.left)
-      textInputScreenY = elementBeingEdited.y * scaleX + (canvasRect.top - containerRect.top)
-      textInputScreenWidth = elementBeingEdited.width * scaleX
-    }
-  }
-
   useEffect(() => {
     if (selectedElement && selectedElement.type === "rectangle") {
       setShowRectangleSidebar(true)
@@ -1355,7 +1420,7 @@ const WhiteBoard = () => {
         )}
 
         {/* Main Content Area */}
-        <div className="flex gap-6 justify-center">
+        <div className="flex gap-6 justify-center" ref={mainContentAreaRef}>
           {/* Tools Button */}
           <button
             onClick={() => {
@@ -1410,7 +1475,7 @@ const WhiteBoard = () => {
                       </button>
                     ))}
                   </div>
-<div className="mt-2">
+                  <div className="mt-2">
                     <button
                       onClick={() => {
                         setShowBackgroundPicker(true)
@@ -1435,8 +1500,6 @@ const WhiteBoard = () => {
                       />
                     </div>
                   </div>
-
-                  
 
                   <div className="mt-6 flex gap-2">
                     <button
@@ -1652,8 +1715,7 @@ const WhiteBoard = () => {
                         setSelectedElement={setSelectedElement}
                         selectedTextElement={idx === selectedCanvasIdx ? selectedTextElement : null} // Only show text selection on active canvas
                         setSelectedTextElement={setSelectedTextElement}
-                        onSelectedTextElementChange={handleSelectedTextElementChange}
-                        onTextElementClick={handleTextElementClick} // NEW: Add the click handler
+                        onTextElementClick={handleTextElementClick} // RE-ADDED THIS PROP
                       />
                     </>
                   )}
@@ -1684,43 +1746,50 @@ const WhiteBoard = () => {
                 </div>
               ))}
             </div>
-
             {/* In-place Textarea for editing */}
-            {elementBeingEdited && editingTextElementId && (
-              <CanvasTextInput
-                ref={canvasTextInputRef}
-                key={editingTextElementId}
-                x={textInputScreenX}
-                y={textInputScreenY}
-                width={textInputScreenWidth}
-                initialText={elementBeingEdited.text}
-                textSettings={elementBeingEdited}
-                isEditing={true}
-                onTextComplete={(newText, screenWidth, screenHeight, screenX, screenY) =>
-                  handleTextEditFinished(
-                    elementBeingEdited.id,
+            {selectedElement &&
+              editingTextElementId &&
+              editingTextScreenCoords && ( // Ensure coords are available
+                <CanvasTextInput
+                  ref={canvasTextInputRef}
+                  key={editingTextElementId}
+                  x={editingTextScreenCoords.x}
+                  y={editingTextScreenCoords.y}
+                  width={editingTextScreenCoords.width}
+                  height={editingTextScreenCoords.height} // Pass height
+                  initialText={selectedElement.text}
+                  textSettings={selectedElement}
+                  isEditing={true}
+                  onTextComplete={(
                     newText,
-                    screenWidth,
-                    screenHeight,
-                    screenX,
-                    screenY,
-                    false,
-                  )
-                }
-                onCancel={(newText, screenWidth, screenHeight, screenX, screenY) =>
-                  handleTextEditFinished(
-                    elementBeingEdited.id,
+                    rect, // Receive rect object
+                  ) =>
+                    handleTextEditFinished(
+                      selectedElement.id,
+                      newText,
+                      rect.width,
+                      rect.height,
+                      rect.x, // Use rect.x for left
+                      rect.y, // Use rect.y for top
+                      false,
+                    )
+                  }
+                  onCancel={(
                     newText,
-                    screenWidth,
-                    screenHeight,
-                    screenX,
-                    screenY,
-                    true,
-                  )
-                }
-              />
-            )}
-
+                    rect, // Receive rect object
+                  ) =>
+                    handleTextEditFinished(
+                      selectedElement.id,
+                      newText,
+                      rect.width,
+                      rect.height,
+                      rect.x, // Use rect.x for left
+                      rect.y, // Use rect.y for top
+                      true,
+                    )
+                  }
+                />
+              )}
             {/* Add Page Button */}
             <div className="border-t border-b w-[1100px] border-gray-400 flex justify-center">
               <button
