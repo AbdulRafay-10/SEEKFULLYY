@@ -571,8 +571,8 @@ const Canvas = ({
     }
 
     ctx.strokeStyle = "#000000" // Black border
-    ctx.lineWidth = 2
-    ctx.setLineDash([5, 5])
+    ctx.lineWidth = 1
+    ctx.setLineDash([0, 0])
     ctx.strokeRect(
       Math.floor(boxX - padding),
       Math.floor(boxY - padding),
@@ -901,7 +901,9 @@ const Canvas = ({
     if (clickedElement && clickedElement.type === "text") {
       setSelectedElement(clickedElement)
       const canvasElement = canvasRef.current
-      const canvasRect = canvasElement.getBoundingClientRect() // Viewport-relative rect of the canvas
+      const canvasRect = canvasElement.getBoundingClientRect()
+      
+      // Viewport-relative rect of the canvas
 
       const scaleX = canvasRect.width / canvasElement.width
       const scaleY = canvasRect.height / canvasElement.height
@@ -914,8 +916,21 @@ const Canvas = ({
       let textToDraw = clickedElement.text || ""
       if (clickedElement.uppercase) textToDraw = textToDraw.toUpperCase()
 
-      const unwrappedTextMetrics = tempCtx.measureText(textToDraw)
-      const unwrappedTextWidth = unwrappedTextMetrics.width
+      // FIXED: Pass Number.POSITIVE_INFINITY to get the true unwrapped width
+      const { width: unwrappedTextWidth } = measureWrappedText(
+  tempCtx,
+  textToDraw,
+  Number.POSITIVE_INFINITY, // Ensure no wrapping
+  clickedElement.fontSize || textSettings.fontSize,
+  clickedElement.fontFamily || textSettings.fontFamily,
+  clickedElement.bold,
+  clickedElement.italic,
+  clickedElement.uppercase,
+  clickedElement.letterSpacing || textSettings.letterSpacing,
+)
+
+
+
 
       // Calculate single line height based on font size and line height
       const singleLineHeight =
@@ -929,10 +944,12 @@ const Canvas = ({
         boxX_canvas = clickedElement.x + (clickedElement.width - unwrappedTextWidth)
       }
       const boxY_canvas = clickedElement.y
-      // Add a more generous buffer to the unwrapped width to account for textarea padding/borders
-      const PADDING_BUFFER = 40 // Increased buffer
-      const boxWidth_canvas = unwrappedTextWidth + PADDING_BUFFER
-      const boxHeight_canvas = singleLineHeight // Use single line height
+      // Calculate buffer based on textarea's padding (8px*2) + border (2px*2) + a slightly larger fudge factor
+      const PADDING_BUFFER_HORIZONTAL = 8 * 2 + 2 * 2 + 20 // 16px padding + 4px border + 20px fudge = 40px
+      const PADDING_BUFFER_VERTICAL = 8 * 2 + 2 * 2 + 5 // 16px padding + 4px border + 5px fudge = 25px
+
+      const boxWidth_canvas = unwrappedTextWidth + PADDING_BUFFER_HORIZONTAL
+      const boxHeight_canvas = singleLineHeight + PADDING_BUFFER_VERTICAL // Use single line height + vertical buffer
 
       // Convert canvas bounding box to viewport screen coordinates
       const screenX_viewport = boxX_canvas * scaleX + canvasRect.left

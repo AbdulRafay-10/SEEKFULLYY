@@ -1,126 +1,235 @@
-"use client"
-import { useRef, useEffect, useState, forwardRef, useImperativeHandle } from "react"
+"use client";
+
+import React, {
+  useRef,
+  useEffect,
+  useState,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 
 const CanvasTextInput = forwardRef(
-  ({ x, y, width, initialText, textSettings, primaryColor, onTextComplete, onCancel, isEditing }, ref) => {
-    const textareaRef = useRef(null)
-    const containerRef = useRef(null)
-    const [text, setText] = useState(initialText)
-    const [dimensions, setDimensions] = useState({ width: width || 200, height: 40 })
-    const [position, setPosition] = useState({ x, y })
+  (
+    {
+      x,
+      y,
+      width: initialWidth,
+      initialText = "",
+      textSettings = {},
+      primaryColor = "#000",
+      onTextComplete,
+      onCancel,
+      isEditing,
+    },
+    ref
+  ) => {
+    const textareaRef = useRef(null);
+    const containerRef = useRef(null);
+    const measureRef = useRef(null);
 
-    // Expose blur method to parent component
+    const [text, setText] = useState(initialText);
+
+    const [dimensions, setDimensions] = useState({
+      width: initialWidth || 100,
+      height: 40,
+    });
+
+    const [position] = useState({ x, y });
+
+    const initialSelectDoneRef = useRef(false);
+
     useImperativeHandle(ref, () => ({
       blur: () => {
-        if (textareaRef.current) {
-          textareaRef.current.blur()
-        }
+        if (textareaRef.current) textareaRef.current.blur();
       },
-    }))
+    }));
 
-    // Apply styles and focus on mount
+    const adjustSize = () => {
+      if (measureRef.current && textareaRef.current) {
+        measureRef.current.textContent = text || " ";
+
+        const measuredWidth = measureRef.current.offsetWidth;
+
+        const fontSizePx = textSettings.fontSize || 16;
+        const padding = 8;
+        const borderWidth = 1;
+        const verticalBuffer = 5;
+        const EXTRA_BUFFER = 15; // Extra horizontal buffer to prevent scrollbar flicker
+
+        const totalHorizontal = 2 * (padding + borderWidth);
+        const totalVertical = 2 * (padding + borderWidth);
+
+        // Add EXTRA_BUFFER here to avoid horizontal scrollbar flickering
+        const newWidth = Math.max(
+          measuredWidth + totalHorizontal + EXTRA_BUFFER,
+          50
+        );
+        const fixedHeight = fontSizePx * 1.3 + totalVertical + verticalBuffer;
+
+        setDimensions((oldDims) => {
+          if (
+            Math.abs(oldDims.width - newWidth) > 2 ||
+            Math.abs(oldDims.height - fixedHeight) > 2
+          ) {
+            return { width: newWidth, height: fixedHeight };
+          }
+          return oldDims;
+        });
+
+        textareaRef.current.style.height = `${fixedHeight}px`;
+        textareaRef.current.style.lineHeight = `${fontSizePx * 1.3}px`;
+      }
+    };
+
+    useEffect(() => {
+      adjustSize();
+    }, [text, textSettings.fontFamily, textSettings.fontSize, textSettings.letterSpacing]);
+
     useEffect(() => {
       if (textareaRef.current && isEditing) {
-        textareaRef.current.style.fontFamily = textSettings.fontFamily
-        textareaRef.current.style.fontSize = `${textSettings.fontSize}px`
+        const ta = textareaRef.current;
+        const fontSizePx = textSettings.fontSize || 16;
+        const verticalBuffer = 5;
+        const lineHeightValue = fontSizePx * 1.3;
 
-        // Use requestAnimationFrame to ensure DOM is ready for accurate measurements
-        requestAnimationFrame(() => {
-          if (textareaRef.current) {
-            textareaRef.current.focus()
-            if (
-              initialText === "Click to type" ||
-              initialText === "Add a Heading" ||
-              initialText === "Add a Subheading" ||
-              initialText === "Add a little bit of body text"
-            ) {
-              textareaRef.current.select()
-            }
-            adjustHeight() // Adjust height immediately after focus/select
+        ta.style.fontFamily = textSettings.fontFamily || "Arial, sans-serif";
+        ta.style.fontSize = `${fontSizePx}px`;
+        ta.style.letterSpacing = `${textSettings.letterSpacing || 0}px`;
+        ta.style.fontWeight = textSettings.bold ? "bold" : "normal";
+        ta.style.fontStyle = textSettings.italic ? "italic" : "normal";
+        ta.style.color = textSettings.color || "#000";
+        ta.style.lineHeight = `${lineHeightValue}px`;
+
+        if (!initialSelectDoneRef.current) {
+          ta.focus();
+
+          if (
+            [
+              "Click to type",
+              "Add a Heading",
+              "Add a Subheading",
+              "Add a little bit of body text",
+            ].includes(initialText)
+          ) {
+            ta.select();
           }
-        })
-      }
-    }, [isEditing, initialText, textSettings])
 
-    const adjustHeight = () => {
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto"
-        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
-        setDimensions((prev) => ({ ...prev, height: textareaRef.current.scrollHeight }))
+          initialSelectDoneRef.current = true;
+        } else {
+          ta.focus();
+        }
+
+        adjustSize();
       }
-    }
+    }, [isEditing, initialText, textSettings]);
 
     const handleComplete = (cancelled = false) => {
       if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect()
-        if (cancelled && onCancel) {
-          onCancel(text, rect)
-        } else if (onTextComplete) {
-          onTextComplete(text, rect)
-        }
-      }
-    }
+        const rect = containerRef.current.getBoundingClientRect();
 
-    const handleBlur = () => {
-      handleComplete(false)
-    }
+        if (cancelled && onCancel) onCancel(text, rect);
+        else if (onTextComplete) onTextComplete(text, rect);
+      }
+      initialSelectDoneRef.current = false;
+    };
+
+    const handleBlur = () => handleComplete(false);
 
     const handleKeyDown = (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault()
-        handleComplete(false)
+        e.preventDefault();
+        handleComplete(false);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        handleComplete(true);
       }
-      if (e.key === "Escape") {
-        e.preventDefault()
-        handleComplete(true)
-      }
-    }
+    };
 
-    const handleInputChange = (e) => {
-      setText(e.target.value)
-    }
+    const handleInputChange = (e) => setText(e.target.value);
 
-    if (!isEditing) return null
+    const handleMouseDown = () => {};
+
+    if (!isEditing) return null;
 
     return (
-      <div
-        ref={containerRef}
-        className="canvas-text-input"
-        style={{
-          position: "absolute",
-          left: `${position.x}px`,
-          top: `${position.y}px`,
-          zIndex: 1000,
-        }}
-      >
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          onBlur={handleBlur}
+      <>
+        <span
+          ref={measureRef}
           style={{
-            width: `${dimensions.width}px`,
-            border: `2px dashed ${primaryColor || "#000000"}`,
-            borderRadius: "4px",
-            padding: "0px",
-            outline: "none",
-            resize: "none",
-            fontFamily: textSettings.fontFamily || "Arial",
+            position: "absolute",
+            top: -9999,
+            left: -9999,
+            whiteSpace: "nowrap",
+            fontFamily: textSettings.fontFamily || "Arial, sans-serif",
             fontSize: `${textSettings.fontSize || 16}px`,
-            color: textSettings.color || "#000000",
+            letterSpacing: `${textSettings.letterSpacing || 0}px`,
             fontWeight: textSettings.bold ? "bold" : "normal",
             fontStyle: textSettings.italic ? "italic" : "normal",
-            textAlign: textSettings.align || "left",
-            lineHeight: `${textSettings.lineHeight || 1.2}`,
-            background: "rgba(255, 255, 255, 0.95)",
-            // Removed minHeight to allow dynamic height based on content
+            visibility: "hidden",
+            padding: 0,
+            margin: 0,
+            border: "none",
           }}
-        />
-      </div>
-    )
-  },
-)
+        >
+          {text || " "}
+        </span>
 
-CanvasTextInput.displayName = "CanvasTextInput"
-export default CanvasTextInput
+        <div
+          ref={containerRef}
+          style={{
+            position: "absolute",
+            top: position.y,
+            left: position.x,
+            width: dimensions.width,
+            height: dimensions.height,
+            border: `1px solid ${primaryColor}`,
+            boxSizing: "border-box",
+            backgroundColor: "#fff",
+            borderRadius: 4,
+            padding: 0,
+            overflow: "hidden",
+            zIndex: 1000,
+          }}
+        >
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={handleInputChange}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            onMouseDown={handleMouseDown}
+            spellCheck={false}
+            autoFocus
+            style={{
+              width: "100%",
+              height: "100%",
+              outline: "none",
+              border: "none",
+              backgroundColor: "transparent",
+              resize: "none",
+              padding: "8px",
+              fontFamily: textSettings.fontFamily || "Arial, sans-serif",
+              fontSize: `${textSettings.fontSize || 16}px`,
+              letterSpacing: `${textSettings.letterSpacing || 0}px`,
+              fontWeight: textSettings.bold ? "bold" : "normal",
+              fontStyle: textSettings.italic ? "italic" : "normal",
+              whiteSpace: "nowrap",
+              overflowX: "auto",
+              overflowY: "hidden",
+              boxSizing: "border-box",
+              color: textSettings.color || "#000",
+              caretColor: textSettings.color || "#000",
+              lineHeight: `${(textSettings.fontSize || 16) * 1.3}px`,
+              userSelect: "text",
+              MozUserSelect: "text",
+              WebkitUserSelect: "text",
+              msUserSelect: "text",
+            }}
+          />
+        </div>
+      </>
+    );
+  }
+);
+
+export default CanvasTextInput;

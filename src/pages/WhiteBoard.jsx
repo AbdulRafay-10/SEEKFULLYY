@@ -1139,8 +1139,18 @@ const WhiteBoard = () => {
           let textToDraw = selectedTextElement.text || ""
           if (selectedTextElement.uppercase) textToDraw = textToDraw.toUpperCase()
 
-          const unwrappedTextMetrics = tempCtx.measureText(textToDraw)
-          const unwrappedTextWidth = unwrappedTextMetrics.width
+          // FIXED: Pass Number.POSITIVE_INFINITY to get the true unwrapped width
+          const { width: unwrappedTextWidth } = measureWrappedText(
+            tempCtx,
+            textToDraw,
+            Number.POSITIVE_INFINITY, // Get true unwrapped width
+            selectedTextElement.fontSize,
+            selectedTextElement.fontFamily,
+            selectedTextElement.bold,
+            selectedTextElement.italic,
+            selectedTextElement.uppercase,
+            selectedTextElement.letterSpacing,
+          )
 
           // Calculate single line height based on font size and line height
           const singleLineHeight =
@@ -1154,9 +1164,12 @@ const WhiteBoard = () => {
             boxX_canvas = selectedTextElement.x + (selectedTextElement.width - unwrappedTextWidth)
           }
           const boxY_canvas = selectedTextElement.y
-          const PADDING_BUFFER = 40 // Consistent increased buffer
-          const boxWidth_canvas = unwrappedTextWidth + PADDING_BUFFER
-          const boxHeight_canvas = singleLineHeight // Use single line height
+          // Calculate buffer based on textarea's padding (8px*2) + border (2px*2) + a slightly larger fudge factor
+          const PADDING_BUFFER_HORIZONTAL = 8 * 2 + 2 * 2 + 20 // 16px padding + 4px border + 20px fudge = 40px
+          const PADDING_BUFFER_VERTICAL = 8 * 2 + 2 * 2 + 5 // 16px padding + 4px border + 5px fudge = 25px
+
+          const boxWidth_canvas = unwrappedTextWidth + PADDING_BUFFER_HORIZONTAL
+          const boxHeight_canvas = singleLineHeight + PADDING_BUFFER_VERTICAL // Use single line height + vertical buffer
 
           // Convert canvas bounding box to viewport screen coordinates
           const screenX_viewport = boxX_canvas * (canvasRect.width / canvasElement.width) + canvasRect.left
