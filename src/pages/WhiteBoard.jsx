@@ -148,6 +148,7 @@ const WhiteBoard = () => {
   const [showTextSubSidebar, setShowTextSubSidebar] = useState(false)
   const [showRectangleSidebar, setShowRectangleSidebar] = useState(false)
   const [showCircleSidebar, setShowCircleSidebar] = useState(false)
+  const [showOvalSidebar, setShowOvalSidebar] = useState(false);
   const [showLineSidebar, setShowLineSidebar] = useState(false)
   const [showPenSidebar, setShowPenSidebar] = useState(false)
   const [editingTextElementId, setEditingTextElementId] = useState(null)
@@ -187,6 +188,13 @@ const WhiteBoard = () => {
       isLucideIcon: false,
       onClick: () => handleToolClick("circle"),
     },
+    {
+    id: "oval",
+    icon: CircleIcon, // Use circle icon for oval
+    label: "OVAL",
+    isLucideIcon: false,
+    onClick: () => handleToolClick("oval"),
+  },
     {
       id: "line",
       icon: LineIcon,
@@ -431,6 +439,99 @@ const WhiteBoard = () => {
       </div>
     )
   }
+
+  const OvalSidebar = ({ selectedElement }) => {
+  const currentStrokeWidth = selectedElement?.strokeWidth ?? squareSettings.strokeWidth;
+  const currentOpacity = selectedElement?.opacity ?? squareSettings.opacity;
+  const currentFillColor = selectedElement?.fillColor ?? squareSettings.fillColor;
+  const currentStrokeColor = selectedElement?.strokeColor ?? squareSettings.strokeColor;
+
+  const handleSettingChange = useCallback(
+    (key, value) => {
+      if (selectedElement && selectedElement.type === "oval") {
+        const updatedElement = { ...selectedElement, [key]: value };
+
+        const updatedElements = pages[selectedCanvasIdx].elements.map((el) =>
+          el.id === selectedElement.id ? updatedElement : el
+        );
+
+        const updatedPages = pages.map((p, i) =>
+          i === selectedCanvasIdx ? { ...p, elements: updatedElements } : p
+        );
+
+        setPages(updatedPages);
+        setSelectedElement(updatedElement);
+        // No history snapshot for continuous changes - we'll add it on mouse up
+      } else {
+        // Update default settings for new ovals
+        setSquareSettings((prev) => ({ ...prev, [key]: value }));
+      }
+    },
+    [selectedElement, selectedCanvasIdx, pages]
+  );
+
+  return (
+    <div className="fixed right-0 top-0 h-screen w-64 bg-white shadow-lg z-[9998] overflow-y-auto border-l border-gray-200 p-4 oval-sidebar">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold">Oval Settings</h3>
+        <button onClick={() => setShowOvalSidebar(false)} className="p-1 rounded-full hover:bg-gray-100">
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      </div>
+
+      <div className="mb-4">
+        <label className="flex justify-between text-sm font-medium mb-2">
+          <span>Stroke Width</span>
+          <span>{currentStrokeWidth}px</span>
+        </label>
+        <input
+          type="range"
+          min="1"
+          max="20"
+          value={currentStrokeWidth}
+          onChange={(e) => handleSettingChange("strokeWidth", Number.parseInt(e.target.value))}
+          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+        />
+      </div>
+
+      <div className="mb-4">
+        <label className="flex justify-between text-sm font-medium mb-2">
+          <span>Opacity</span>
+          <span>{currentOpacity}</span>
+        </label>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={currentOpacity}
+          onChange={(e) => handleSettingChange("opacity", Number.parseInt(e.target.value))}
+          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">Fill Color</label>
+          <input
+            type="color"
+            value={currentFillColor}
+            onChange={(e) => handleSettingChange("fillColor", e.target.value)}
+            className="w-full h-8 cursor-pointer"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Stroke Color</label>
+          <input
+            type="color"
+            value={currentStrokeColor}
+            onChange={(e) => handleSettingChange("strokeColor", e.target.value)}
+            className="w-full h-8 cursor-pointer"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
 
   const LineSidebar = ({ selectedElement }) => {
     const currentStrokeWidth = selectedElement?.strokeWidth ?? squareSettings.strokeWidth
@@ -1014,6 +1115,8 @@ const WhiteBoard = () => {
         return
       }
 
+      
+
       // Convert screen coordinates to canvas coordinates for the correct canvas
       const canvasElements = canvasContainerRef.current?.querySelectorAll(".canvas-element")
       const canvasElement = canvasElements?.[selectedCanvasIdx]
@@ -1310,62 +1413,66 @@ const WhiteBoard = () => {
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [selectedElement, editingTextElementId, pages, selectedCanvasIdx, addHistorySnapshot])
 
-  const handleToolClick = (toolId) => {
-    if (currentPageData.isLocked) {
-      return
-    }
+ const handleToolClick = (toolId) => {
+  if (currentPageData.isLocked) {
+    return;
+  }
 
-    if (editingTextElementId) {
-      if (canvasTextInputRef.current && typeof canvasTextInputRef.current.blur === "function") {
-        canvasTextInputRef.current.blur()
-      }
-    }
-
-    setShowTextSubSidebar(false)
-    setShowRectangleSidebar(false)
-    setShowCircleSidebar(false)
-    setShowLineSidebar(false)
-    setShowPenSidebar(false)
-    setShapesSidebarOpen(false)
-    setIsNotesOpen(false)
-    setShowHighlightPicker(false) // Close highlight picker when other tools are selected
-
-    if (toolId !== "text") {
-      setSelectedElement(null)
-      setSelectedTextElement(null)
-    }
-
-    setActiveTool(toolId)
-    switch (toolId) {
-      case "shapes":
-        setShapesSidebarOpen(true)
-        break
-      case "text":
-        setShowTextSubSidebar(true)
-        break
-      case "image":
-        handleImageUpload()
-        setActiveTool("select")
-        break
-      case "rectangle":
-        setShowRectangleSidebar(true)
-        break
-      case "circle":
-        setShowCircleSidebar(true)
-        break
-      case "line":
-        setShowLineSidebar(true)
-        break
-      case "pen":
-        setShowPenSidebar(true)
-        break
-      case "highlight": // New: Handle highlight tool click
-        setShowHighlightPicker(true)
-        break
-      default:
-        break
+  if (editingTextElementId) {
+    if (canvasTextInputRef.current && typeof canvasTextInputRef.current.blur === "function") {
+      canvasTextInputRef.current.blur();
     }
   }
+
+  setShowTextSubSidebar(false);
+  setShowRectangleSidebar(false);
+  setShowCircleSidebar(false);
+  setShowLineSidebar(false);
+  setShowPenSidebar(false);
+  setShowOvalSidebar(false); // Reset oval sidebar
+  setShapesSidebarOpen(false);
+  setIsNotesOpen(false);
+  setShowHighlightPicker(false);
+
+  if (toolId !== "text") {
+    setSelectedElement(null);
+    setSelectedTextElement(null);
+  }
+
+  setActiveTool(toolId);
+  switch (toolId) {
+    case "shapes":
+      setShapesSidebarOpen(true);
+      break;
+    case "text":
+      setShowTextSubSidebar(true);
+      break;
+    case "image":
+      handleImageUpload();
+      setActiveTool("select");
+      break;
+    case "rectangle":
+      setShowRectangleSidebar(true);
+      break;
+    case "circle":
+      setShowCircleSidebar(true);
+      break;
+    case "oval":
+      setShowOvalSidebar(true); // Show oval sidebar when oval tool is selected
+      break;
+    case "line":
+      setShowLineSidebar(true);
+      break;
+    case "pen":
+      setShowPenSidebar(true);
+      break;
+    case "highlight":
+      setShowHighlightPicker(true);
+      break;
+    default:
+      break;
+  }
+};
 
   useEffect(() => {
     if (selectedElement && selectedElement.type === "rectangle") {
@@ -1415,6 +1522,24 @@ const WhiteBoard = () => {
       setShowPenSidebar(false)
     }
   }, [selectedElement, activeTool])
+
+ useEffect(() => {
+  if (selectedElement && selectedElement.type === "oval") {
+    setShowOvalSidebar(true);
+    setShowRectangleSidebar(false);
+    setShowCircleSidebar(false);
+    setShowLineSidebar(false);
+    setShowPenSidebar(false);
+  } else if (activeTool === "oval") {
+    setShowOvalSidebar(true);
+    setShowRectangleSidebar(false);
+    setShowCircleSidebar(false);
+    setShowLineSidebar(false);
+    setShowPenSidebar(false);
+  } else {
+    setShowOvalSidebar(false);
+  }
+}, [selectedElement, activeTool]);
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 relative overflow-auto">
@@ -1601,6 +1726,8 @@ const WhiteBoard = () => {
 
           {/* Circle Settings Sidebar */}
           {showCircleSidebar && <CircleSidebar selectedElement={selectedElement} />}
+
+          {showOvalSidebar && <OvalSidebar selectedElement={selectedElement} />}
 
           {/* Line Settings Sidebar */}
           {showLineSidebar && <LineSidebar selectedElement={selectedElement} />}
