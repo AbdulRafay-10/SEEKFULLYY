@@ -2,18 +2,19 @@
 
 import { useState, useEffect } from "react"
 import { HexColorPicker } from "react-colorful"
-import { X, Pipette, RotateCcw } from "lucide-react"
+import { X, Pipette } from "lucide-react"
 
 const HighlightColorPicker = ({
-  color,
-  onChange,
+  highlightSettings, // New prop
+  onHighlightSettingsChange, // New prop
   showPicker,
   onToggle,
   position = "left",
   savedColors = [],
   onSaveColor,
+  // Removed 'color' and 'onChange' as direct props
 }) => {
-  const [hexValue, setHexValue] = useState(color)
+  const [hexValue, setHexValue] = useState(highlightSettings.fillColor)
   const [activeTab, setActiveTab] = useState("SOLID")
 
   // Gradient states
@@ -26,8 +27,8 @@ const HighlightColorPicker = ({
   const [selectedStop, setSelectedStop] = useState(0)
 
   useEffect(() => {
-    setHexValue(color)
-  }, [color])
+    setHexValue(highlightSettings.fillColor)
+  }, [highlightSettings.fillColor])
 
   useEffect(() => {}, [showPicker])
 
@@ -38,7 +39,9 @@ const HighlightColorPicker = ({
   const handleColorChange = (newColor) => {
     setHexValue(newColor)
     if (activeTab === "SOLID") {
-      onChange(newColor)
+      // Ensure only solid color is set for highlight
+      const solidColor = newColor.includes("gradient") ? "#FFFF00" : newColor // Fallback to yellow if gradient
+      onHighlightSettingsChange("fillColor", solidColor)
     } else {
       // Update gradient stop color
       const newStops = [...gradientStops]
@@ -54,7 +57,7 @@ const HighlightColorPicker = ({
     if (/^#[0-9A-Fa-f]{6}$/i.test(value)) {
       setHexValue(value)
       if (activeTab === "SOLID") {
-        onChange(value) // Make sure this is called
+        onHighlightSettingsChange("fillColor", value)
       } else {
         const newStops = [...gradientStops]
         newStops[selectedStop].color = value
@@ -63,7 +66,6 @@ const HighlightColorPicker = ({
       }
     }
   }
-
 
   const handleSavedColorClick = (savedColor) => {
     handleColorChange(savedColor)
@@ -219,6 +221,22 @@ const HighlightColorPicker = ({
               >
                 Save Current Color
               </button>
+            </div>
+
+            {/* Corner Radius Section */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center justify-between">
+                CORNER RADIUS
+                <span>{highlightSettings.cornerRadius}px</span>
+              </h4>
+              <input
+                type="range"
+                min="0"
+                max="50"
+                value={highlightSettings.cornerRadius}
+                onChange={(e) => onHighlightSettingsChange("cornerRadius", Number.parseInt(e.target.value))}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              />
             </div>
           </>
         )}

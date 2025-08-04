@@ -49,20 +49,20 @@ const SmallColorWheelIcon = ({ onClick, show }) => {
         className="w-14 h-14 rounded-full hover:scale-110 transition-all duration-200 shadow-xl border-2 border-white"
         style={{
           background: `conic-gradient(
-          #ff0000 0deg,
-          #ff8000 45deg,
-          #ffff00 90deg,
-          #80ff00 135deg,
-          #00ff00 180deg,
-          #00ff80 225deg,
-          #00ffff 270deg,
-          #0080ff 315deg,
-          #0000ff 360deg,
-          #8000ff 450deg,
-          #ff00ff 495deg,
-          #ff0080 540deg,
-          #ff0000 585deg
-        )`,
+    #ff0000 0deg,
+    #ff8000 45deg,
+    #ffff00 90deg,
+    #80ff00 135deg,
+    #00ff00 180deg,
+    #00ff80 225deg,
+    #00ffff 270deg,
+    #0080ff 315deg,
+    #0000ff 360deg,
+    #8000ff 450deg,
+    #ff00ff 495deg,
+    #ff0080 540deg,
+    #ff0000 585deg
+  )`,
         }}
       />
     </div>
@@ -143,15 +143,17 @@ const WhiteBoard = () => {
     // New state for highlight properties
     fillColor: "#FFFF00", // Default yellow
     opacity: 50, // Default 50% opacity
+    cornerRadius: 0, // Default corner radius
   })
 
   const [showTextSubSidebar, setShowTextSubSidebar] = useState(false)
   const [showRectangleSidebar, setShowRectangleSidebar] = useState(false)
   const [showCircleSidebar, setShowCircleSidebar] = useState(false)
-  const [showOvalSidebar, setShowOvalSidebar] = useState(false);
+  const [showOvalSidebar, setShowOvalSidebar] = useState(false)
   const [showLineSidebar, setShowLineSidebar] = useState(false)
   const [showPenSidebar, setShowPenSidebar] = useState(false)
   const [editingTextElementId, setEditingTextElementId] = useState(null)
+
   const [selectedElement, setSelectedElement] = useState(null)
   const [selectedTextElement, setSelectedTextElement] = useState(null)
   const colorPickerJustOpenedRef = useRef(false)
@@ -160,16 +162,27 @@ const WhiteBoard = () => {
   const [editingTextScreenCoords, setEditingTextScreenCoords] = useState(null)
 
   // Sidebar states
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [shapesSidebarOpen, setShapesSidebarOpen] = useState(false)
 
   // Main tools for the sidebar
   const mainTools = [
     { id: "select", icon: MousePointer, label: "SELECT", isLucideIcon: true },
     { id: "text", icon: TextIcon, label: "TEXT", isLucideIcon: false },
-    { id: "shapes", icon: ShapesIcon, label: "SHAPES", isLucideIcon: false, isMenu: true },
+    {
+      id: "shapes",
+      icon: ShapesIcon,
+      label: "SHAPES",
+      isLucideIcon: false,
+      isMenu: true,
+    },
     { id: "image", icon: ImageIcon, label: "IMAGE", isLucideIcon: false },
-    { id: "highlight", icon: Highlighter, label: "HIGHLIGHT", isLucideIcon: true }, // New highlight tool
+    {
+      id: "highlight",
+      icon: Highlighter,
+      label: "HIGHLIGHT",
+      isLucideIcon: true,
+    }, // New highlight tool
   ]
 
   // Tools for the shapes sub-menu
@@ -189,12 +202,12 @@ const WhiteBoard = () => {
       onClick: () => handleToolClick("circle"),
     },
     {
-    id: "oval",
-    icon: CircleIcon, // Use circle icon for oval
-    label: "OVAL",
-    isLucideIcon: false,
-    onClick: () => handleToolClick("oval"),
-  },
+      id: "oval",
+      icon: CircleIcon, // Use circle icon for oval
+      label: "OVAL",
+      isLucideIcon: false,
+      onClick: () => handleToolClick("oval"),
+    },
     {
       id: "line",
       icon: LineIcon,
@@ -219,6 +232,28 @@ const WhiteBoard = () => {
       setHistoryIndex(newHistory.length - 1)
     },
     [history, historyIndex],
+  )
+
+  const handleOvalSettingChange = useCallback(
+    (key, value) => {
+      if (selectedElement && selectedElement.type === "oval") {
+        const updatedElement = { ...selectedElement, [key]: value }
+
+        const updatedElements = pages[selectedCanvasIdx].elements.map((el) =>
+          el.id === selectedElement.id ? updatedElement : el,
+        )
+
+        const updatedPages = pages.map((p, i) => (i === selectedCanvasIdx ? { ...p, elements: updatedElements } : p))
+
+        setPages(updatedPages)
+        setSelectedElement(updatedElement)
+        addHistorySnapshot(updatedPages)
+      } else {
+        // Update default settings for new ovals
+        setSquareSettings((prev) => ({ ...prev, [key]: value }))
+      }
+    },
+    [selectedElement, selectedCanvasIdx, pages, addHistorySnapshot],
   )
 
   const RectangleSidebar = ({ selectedElement }) => {
@@ -440,98 +475,106 @@ const WhiteBoard = () => {
     )
   }
 
-  const OvalSidebar = ({ selectedElement }) => {
-  const currentStrokeWidth = selectedElement?.strokeWidth ?? squareSettings.strokeWidth;
-  const currentOpacity = selectedElement?.opacity ?? squareSettings.opacity;
-  const currentFillColor = selectedElement?.fillColor ?? squareSettings.fillColor;
-  const currentStrokeColor = selectedElement?.strokeColor ?? squareSettings.strokeColor;
+  // 1. Define handleHideOvalSidebar callback
+  const handleHideOvalSidebar = useCallback(() => {
+    setShowOvalSidebar(false)
+  }, [])
 
-  const handleSettingChange = useCallback(
-    (key, value) => {
-      if (selectedElement && selectedElement.type === "oval") {
-        const updatedElement = { ...selectedElement, [key]: value };
+  const OvalSidebar = ({ selectedElement, onChange }) => {
+    // Keep onChange here as it's the prop name for OvalSidebar
+    const currentStrokeWidth = selectedElement?.strokeWidth ?? squareSettings.strokeWidth
+    const currentOpacity = selectedElement?.opacity ?? squareSettings.opacity
+    const currentFillColor = selectedElement?.fillColor ?? squareSettings.fillColor
+    const currentStrokeColor = selectedElement?.strokeColor ?? squareSettings.strokeColor
 
-        const updatedElements = pages[selectedCanvasIdx].elements.map((el) =>
-          el.id === selectedElement.id ? updatedElement : el
-        );
+    const handleSettingChange = useCallback(
+      // This is the internal handler for OvalSidebar
+      (key, value) => {
+        if (selectedElement && selectedElement.type === "oval") {
+          const updatedElement = { ...selectedElement, [key]: value }
 
-        const updatedPages = pages.map((p, i) =>
-          i === selectedCanvasIdx ? { ...p, elements: updatedElements } : p
-        );
+          const updatedElements = pages[selectedCanvasIdx].elements.map((el) =>
+            el.id === selectedElement.id ? updatedElement : el,
+          )
 
-        setPages(updatedPages);
-        setSelectedElement(updatedElement);
-        // No history snapshot for continuous changes - we'll add it on mouse up
-      } else {
-        // Update default settings for new ovals
-        setSquareSettings((prev) => ({ ...prev, [key]: value }));
-      }
-    },
-    [selectedElement, selectedCanvasIdx, pages]
-  );
+          const updatedPages = pages.map((p, i) => (i === selectedCanvasIdx ? { ...p, elements: updatedElements } : p))
 
-  return (
-    <div className="fixed right-0 top-0 h-screen w-64 bg-white shadow-lg z-[9998] overflow-y-auto border-l border-gray-200 p-4 oval-sidebar">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Oval Settings</h3>
-        <button onClick={() => setShowOvalSidebar(false)} className="p-1 rounded-full hover:bg-gray-100">
-          <ChevronRight className="w-5 h-5" />
-        </button>
-      </div>
+          setPages(updatedPages)
+          setSelectedElement(updatedElement)
+          // No history snapshot for continuous changes - we'll add it on mouse up
+          // The parent's handleOvalSettingChange (passed as 'onChange' to this component)
+          // already handles the history snapshot for discrete changes.
+          // For real-time updates, we just update the state directly.
+        } else {
+          // Update default settings for new ovals
+          setSquareSettings((prev) => ({ ...prev, [key]: value }))
+        }
+      },
+      [selectedElement, selectedCanvasIdx, pages],
+    )
 
-      <div className="mb-4">
-        <label className="flex justify-between text-sm font-medium mb-2">
-          <span>Stroke Width</span>
-          <span>{currentStrokeWidth}px</span>
-        </label>
-        <input
-          type="range"
-          min="1"
-          max="20"
-          value={currentStrokeWidth}
-          onChange={(e) => handleSettingChange("strokeWidth", Number.parseInt(e.target.value))}
-          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-        />
-      </div>
+    return (
+      <div className="fixed right-0 top-0 h-screen w-64 bg-white shadow-lg z-[9998] overflow-y-auto border-l border-gray-200 p-4 oval-sidebar">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">Oval Settings</h3>
+          <button onClick={() => setShowOvalSidebar(false)} className="p-1 rounded-full hover:bg-gray-100">
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
 
-      <div className="mb-4">
-        <label className="flex justify-between text-sm font-medium mb-2">
-          <span>Opacity</span>
-          <span>{currentOpacity}</span>
-        </label>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={currentOpacity}
-          onChange={(e) => handleSettingChange("opacity", Number.parseInt(e.target.value))}
-          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium mb-1">Fill Color</label>
+        <div className="mb-4">
+          <label className="flex justify-between text-sm font-medium mb-2">
+            <span>Stroke Width</span>
+            <span>{currentStrokeWidth}px</span>
+          </label>
           <input
-            type="color"
-            value={currentFillColor}
-            onChange={(e) => handleSettingChange("fillColor", e.target.value)}
-            className="w-full h-8 cursor-pointer"
+            type="range"
+            min="1"
+            max="20"
+            value={currentStrokeWidth}
+            onChange={(e) => handleSettingChange("strokeWidth", Number.parseInt(e.target.value))} // Use handleSettingChange
+            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Stroke Color</label>
+
+        <div className="mb-4">
+          <label className="flex justify-between text-sm font-medium mb-2">
+            <span>Opacity</span>
+            <span>{currentOpacity}</span>
+          </label>
           <input
-            type="color"
-            value={currentStrokeColor}
-            onChange={(e) => handleSettingChange("strokeColor", e.target.value)}
-            className="w-full h-8 cursor-pointer"
+            type="range"
+            min="0"
+            max="100"
+            value={currentOpacity}
+            onChange={(e) => handleSettingChange("opacity", Number.parseInt(e.target.value))} // Use handleSettingChange
+            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
           />
         </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Fill Color</label>
+            <input
+              type="color"
+              value={currentFillColor}
+              onChange={(e) => handleSettingChange("fillColor", e.target.value)} // Use handleSettingChange
+              className="w-full h-8 cursor-pointer"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Stroke Color</label>
+            <input
+              type="color"
+              value={currentStrokeColor}
+              onChange={(e) => handleSettingChange("strokeColor", e.target.value)} // Use handleSettingChange
+              className="w-full h-8 cursor-pointer"
+            />
+          </div>
+        </div>
       </div>
-    </div>
-  );
-};
+    )
+  }
 
   const LineSidebar = ({ selectedElement }) => {
     const currentStrokeWidth = selectedElement?.strokeWidth ?? squareSettings.strokeWidth
@@ -914,6 +957,29 @@ const WhiteBoard = () => {
     [selectedTextElement],
   )
 
+  const handleHighlightSettingsChange = useCallback(
+    (key, value) => {
+      setHighlightSettings((prev) => ({
+        ...prev,
+        [key]: value,
+      }))
+
+      // If a highlight element is currently selected, update its properties in the elements array
+      if (selectedElement && selectedElement.type === "highlight") {
+        const updatedElement = { ...selectedElement, [key]: value }
+        const updatedElements = pages[selectedCanvasIdx].elements.map((el) =>
+          el.id === selectedElement.id ? updatedElement : el,
+        )
+        const updatedPages = pages.map((p, i) => (i === selectedCanvasIdx ? { ...p, elements: updatedElements } : p))
+        setPages(updatedPages)
+        setSelectedElement(updatedElement) // Keep selectedElement in sync
+        // No history snapshot here, as this is for real-time editing.
+        // History snapshot will be added on mouse up (transformation end) or discrete actions.
+      }
+    },
+    [selectedElement, pages, selectedCanvasIdx],
+  )
+
   // Add this callback function
   const handleSelectedTextElementChange = useCallback((updatedElement) => {
     setSelectedTextElement(updatedElement)
@@ -1082,9 +1148,19 @@ const WhiteBoard = () => {
       const parentRect = mainContentAreaRef.current.getBoundingClientRect()
       const relativeX = screenX - parentRect.left
       const relativeY = screenY - parentRect.top
-      setEditingTextScreenCoords({ x: relativeX, y: relativeY, width: screenWidth, height: screenHeight })
+      setEditingTextScreenCoords({
+        x: relativeX,
+        y: relativeY,
+        width: screenWidth,
+        height: screenHeight,
+      })
     } else {
-      setEditingTextScreenCoords({ x: screenX, y: screenY, width: screenWidth, height: screenHeight })
+      setEditingTextScreenCoords({
+        x: screenX,
+        y: screenY,
+        width: screenWidth,
+        height: screenHeight,
+      })
     }
   }, [])
 
@@ -1115,8 +1191,6 @@ const WhiteBoard = () => {
         return
       }
 
-      
-
       // Convert screen coordinates to canvas coordinates for the correct canvas
       const canvasElements = canvasContainerRef.current?.querySelectorAll(".canvas-element")
       const canvasElement = canvasElements?.[selectedCanvasIdx]
@@ -1141,7 +1215,9 @@ const WhiteBoard = () => {
         // to ensure it doesn't wrap unless explicitly resized by the user.
         const tempCanvas = document.createElement("canvas")
         const tempCtx = tempCanvas.getContext("2d")
-        tempCtx.font = `${updatedElement.bold ? "bold " : ""}${updatedElement.italic ? "italic " : ""}${updatedElement.fontSize}px ${updatedElement.fontFamily}`
+        tempCtx.font = `${updatedElement.bold ? "bold " : ""}${
+          updatedElement.italic ? "italic " : ""
+        }${updatedElement.fontSize}px ${updatedElement.fontFamily}`
         tempCtx.letterSpacing = `${updatedElement.letterSpacing || textSettings.letterSpacing}px`
         let textToDraw = updatedElement.text || ""
         if (updatedElement.uppercase) textToDraw = textToDraw.toUpperCase()
@@ -1238,7 +1314,9 @@ const WhiteBoard = () => {
           // Calculate the actual rendered bounding box of the text element in canvas coordinates
           const tempCanvas = document.createElement("canvas")
           const tempCtx = tempCanvas.getContext("2d")
-          tempCtx.font = `${selectedTextElement.bold ? "bold " : ""}${selectedTextElement.italic ? "italic " : ""}${selectedTextElement.fontSize}px ${selectedTextElement.fontFamily}`
+          tempCtx.font = `${selectedTextElement.bold ? "bold " : ""}${
+            selectedTextElement.italic ? "italic " : ""
+          }${selectedTextElement.fontSize}px ${selectedTextElement.fontFamily}`
           let textToDraw = selectedTextElement.text || ""
           if (selectedTextElement.uppercase) textToDraw = textToDraw.toUpperCase()
 
@@ -1294,6 +1372,7 @@ const WhiteBoard = () => {
     }
   }, [editingTextElementId, selectedTextElement, selectedCanvasIdx, handleTextEditStarted, canvasContainerRef])
 
+  // 5. Update handleClickOutside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (colorPickerJustOpenedRef.current) {
@@ -1307,11 +1386,10 @@ const WhiteBoard = () => {
 
       if (editingTextElementId) {
         if (!clickedOnCanvasTextInput && !clickedOnTextToolbar) {
-          // Removed setTimeout here, relying on requestAnimationFrame in CanvasTextInput
           if (canvasTextInputRef.current?.blur) {
             canvasTextInputRef.current.blur()
           }
-          return // Exit early if editing text and clicked outside text input/toolbar
+          return
         }
       }
 
@@ -1319,6 +1397,7 @@ const WhiteBoard = () => {
       const clickedOnSmallColorWheelIcon = event.target.closest(".small-color-wheel-icon-container")
       const clickedOnRectangleSidebar = event.target.closest(".rectangle-sidebar")
       const clickedOnCircleSidebar = event.target.closest(".circle-sidebar")
+      const clickedOnOvalSidebar = event.target.closest(".oval-sidebar") // ADD THIS
       const clickedOnLineSidebar = event.target.closest(".line-sidebar")
       const clickedOnPenSidebar = event.target.closest(".pen-sidebar")
       const clickedOnSquareSidebar = event.target.closest(".square-sidebar")
@@ -1326,8 +1405,8 @@ const WhiteBoard = () => {
       const clickedOnShapesSidebar = event.target.closest(".shapes-sidebar")
       const clickedOnToolsButton = event.target.closest(".tools-button")
       const clickedOnNotesButton = event.target.closest(".notes-toggle-button")
-      const clickedOnTextSubSidebar = event.target.closest(".text-sub-sidebar") // Corrected class name
-      const clickedOnHighlightPicker = event.target.closest(".highlight-color-picker-sidebar") // New: Highlight picker
+      const clickedOnTextSubSidebar = event.target.closest(".text-sub-sidebar")
+      const clickedOnHighlightPicker = event.target.closest(".highlight-color-picker-sidebar")
 
       const clickedOnAnyInteractiveUI =
         clickedOnTextToolbar ||
@@ -1335,6 +1414,7 @@ const WhiteBoard = () => {
         clickedOnSmallColorWheelIcon ||
         clickedOnRectangleSidebar ||
         clickedOnCircleSidebar ||
+        clickedOnOvalSidebar || // ADD THIS
         clickedOnLineSidebar ||
         clickedOnPenSidebar ||
         clickedOnMainSidebar ||
@@ -1343,7 +1423,7 @@ const WhiteBoard = () => {
         clickedOnNotesButton ||
         clickedOnCanvasTextInput ||
         clickedOnTextSubSidebar ||
-        clickedOnHighlightPicker // New: Highlight picker
+        clickedOnHighlightPicker
 
       if (!clickedOnAnyInteractiveUI && !clickedOnCanvasElement) {
         setShowColorIcon(false)
@@ -1353,7 +1433,7 @@ const WhiteBoard = () => {
         }
         setShowBackgroundPicker(false)
         setShowStrokePicker(false)
-        setShowHighlightPicker(false) // New: Close highlight picker
+        setShowHighlightPicker(false)
         setSelectedElement(null)
         setSelectedTextElement(null)
         setSidebarOpen(false)
@@ -1361,12 +1441,13 @@ const WhiteBoard = () => {
         setShowTextSubSidebar(false)
         setShowRectangleSidebar(false)
         setShowCircleSidebar(false)
+        setShowOvalSidebar(false) // ADD THIS
         setShowLineSidebar(false)
         setShowPenSidebar(false)
         setIsNotesOpen(false)
       } else if (clickedOnCanvasElement && !selectedElement) {
         setEditingTextElementId(null)
-        setEditingTextScreenCoords(null) // Clear coords
+        setEditingTextScreenCoords(null)
       }
     }
 
@@ -1379,6 +1460,7 @@ const WhiteBoard = () => {
     isNotesOpen,
     showRectangleSidebar,
     showCircleSidebar,
+    showOvalSidebar, // ADD THIS
     showLineSidebar,
     showPenSidebar,
     showTextSubSidebar,
@@ -1386,7 +1468,7 @@ const WhiteBoard = () => {
     sidebarOpen,
     showBackgroundPicker,
     showStrokePicker,
-    showHighlightPicker, // New: Highlight picker
+    showHighlightPicker,
     selectedElement,
     canvasTextInputRef,
     colorPickerJustOpenedRef,
@@ -1396,6 +1478,20 @@ const WhiteBoard = () => {
     const handleKeyDown = (e) => {
       if (editingTextElementId) {
         return
+      }
+
+      // Handle Undo (Ctrl+Z or Cmd+Z)
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+        e.preventDefault()
+        handleUndo()
+        return // Prevent further processing
+      }
+
+      // Handle Redo (Ctrl+Y or Cmd+Y)
+      if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+        e.preventDefault()
+        handleRedo()
+        return // Prevent further processing
       }
 
       if (selectedElement && (e.key === "Backspace" || e.key === "Delete")) {
@@ -1411,135 +1507,134 @@ const WhiteBoard = () => {
 
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [selectedElement, editingTextElementId, pages, selectedCanvasIdx, addHistorySnapshot])
+  }, [selectedElement, editingTextElementId, pages, selectedCanvasIdx, addHistorySnapshot, handleUndo, handleRedo]) // Add handleUndo and handleRedo to dependencies
 
- const handleToolClick = (toolId) => {
-  if (currentPageData.isLocked) {
-    return;
-  }
+  // 4. Update handleToolClick
+  const handleToolClick = (toolId) => {
+    if (currentPageData.isLocked) {
+      return
+    }
 
-  if (editingTextElementId) {
-    if (canvasTextInputRef.current && typeof canvasTextInputRef.current.blur === "function") {
-      canvasTextInputRef.current.blur();
+    if (editingTextElementId) {
+      if (canvasTextInputRef.current && typeof canvasTextInputRef.current.blur === "function") {
+        canvasTextInputRef.current.blur()
+      }
+    }
+
+    setShowTextSubSidebar(false)
+    setShowRectangleSidebar(false)
+    setShowCircleSidebar(false)
+    setShowLineSidebar(false)
+    setShowPenSidebar(false)
+    setShowOvalSidebar(false) // Ensure this is called when switching tools
+    setShapesSidebarOpen(false)
+    setIsNotesOpen(false)
+    setShowHighlightPicker(false) // Close highlight picker by default when switching tools
+
+    if (toolId !== "text") {
+      setSelectedElement(null)
+      setSelectedTextElement(null)
+    }
+
+    setActiveTool(toolId)
+    switch (toolId) {
+      case "shapes":
+        setShapesSidebarOpen(true)
+        break
+      case "text":
+        setShowTextSubSidebar(true)
+        break
+      case "image":
+        handleImageUpload()
+        setActiveTool("select")
+        break
+      case "rectangle":
+        setShowRectangleSidebar(true)
+        break
+      case "circle":
+        setShowCircleSidebar(true)
+        break
+      case "oval":
+        setShowOvalSidebar(true) // Show oval sidebar when oval tool is selected
+        break
+      case "line":
+        setShowLineSidebar(true)
+        break
+      case "pen":
+        setShowPenSidebar(true)
+        break
+      case "highlight":
+        setShowHighlightPicker(true)
+        break
+      default:
+        break
     }
   }
-
-  setShowTextSubSidebar(false);
-  setShowRectangleSidebar(false);
-  setShowCircleSidebar(false);
-  setShowLineSidebar(false);
-  setShowPenSidebar(false);
-  setShowOvalSidebar(false); // Reset oval sidebar
-  setShapesSidebarOpen(false);
-  setIsNotesOpen(false);
-  setShowHighlightPicker(false);
-
-  if (toolId !== "text") {
-    setSelectedElement(null);
-    setSelectedTextElement(null);
-  }
-
-  setActiveTool(toolId);
-  switch (toolId) {
-    case "shapes":
-      setShapesSidebarOpen(true);
-      break;
-    case "text":
-      setShowTextSubSidebar(true);
-      break;
-    case "image":
-      handleImageUpload();
-      setActiveTool("select");
-      break;
-    case "rectangle":
-      setShowRectangleSidebar(true);
-      break;
-    case "circle":
-      setShowCircleSidebar(true);
-      break;
-    case "oval":
-      setShowOvalSidebar(true); // Show oval sidebar when oval tool is selected
-      break;
-    case "line":
-      setShowLineSidebar(true);
-      break;
-    case "pen":
-      setShowPenSidebar(true);
-      break;
-    case "highlight":
-      setShowHighlightPicker(true);
-      break;
-    default:
-      break;
-  }
-};
 
   useEffect(() => {
-    if (selectedElement && selectedElement.type === "rectangle") {
-      setShowRectangleSidebar(true)
-      setShowCircleSidebar(false)
-      setShowLineSidebar(false)
-      setShowPenSidebar(false)
-    } else if (selectedElement && selectedElement.type === "circle") {
-      setShowCircleSidebar(true)
-      setShowRectangleSidebar(false)
-      setShowLineSidebar(false)
-      setShowPenSidebar(false)
-    } else if (selectedElement && selectedElement.type === "line") {
-      setShowLineSidebar(true)
-      setShowRectangleSidebar(false)
-      setShowCircleSidebar(false)
-      setShowPenSidebar(false)
-    } else if (selectedElement && selectedElement.type === "pen") {
-      setShowPenSidebar(true)
-      setShowRectangleSidebar(false)
-      setShowCircleSidebar(false)
-      setShowLineSidebar(false)
-    } else if (activeTool === "rectangle") {
-      setShowRectangleSidebar(true)
-      setShowCircleSidebar(false)
-      setShowLineSidebar(false)
-      setShowPenSidebar(false)
-    } else if (activeTool === "circle") {
-      setShowCircleSidebar(true)
-      setShowRectangleSidebar(false)
-      setShowLineSidebar(false)
-      setShowPenSidebar(false)
-    } else if (activeTool === "line") {
-      setShowLineSidebar(true)
-      setShowRectangleSidebar(false)
-      setShowCircleSidebar(false)
-      setShowPenSidebar(false)
-    } else if (activeTool === "pen") {
-      setShowPenSidebar(true)
-      setShowRectangleSidebar(false)
-      setShowCircleSidebar(false)
-      setShowLineSidebar(false)
-    } else {
-      setShowRectangleSidebar(false)
-      setShowCircleSidebar(false)
-      setShowLineSidebar(false)
-      setShowPenSidebar(false)
+    // Close all sidebars by default
+    setShowRectangleSidebar(false)
+    setShowCircleSidebar(false)
+    setShowLineSidebar(false)
+    setShowPenSidebar(false)
+    setShowOvalSidebar(false)
+    setShowHighlightPicker(false) // Ensure highlight picker is closed
+
+    if (selectedElement) {
+      switch (selectedElement.type) {
+        case "rectangle":
+          setShowRectangleSidebar(true)
+          break
+        case "circle":
+          setShowCircleSidebar(true)
+          break
+        case "line":
+          setShowLineSidebar(true)
+          break
+        case "pen":
+          setShowPenSidebar(true)
+          break
+        case "oval":
+          setShowOvalSidebar(true)
+          break
+        case "highlight":
+          // When a highlight element is selected, update highlightSettings and open the picker
+          setHighlightSettings({
+            fillColor: selectedElement.fillColor,
+            opacity: selectedElement.opacity,
+            cornerRadius: selectedElement.cornerRadius,
+          })
+          setShowHighlightPicker(true)
+          break
+        default:
+          break
+      }
+    } else if (activeTool) {
+      // If no element is selected, but a tool is active, open the corresponding sidebar
+      switch (activeTool) {
+        case "rectangle":
+          setShowRectangleSidebar(true)
+          break
+        case "circle":
+          setShowCircleSidebar(true)
+          break
+        case "line":
+          setShowLineSidebar(true)
+          break
+        case "pen":
+          setShowPenSidebar(true)
+          break
+        case "oval":
+          setShowOvalSidebar(true)
+          break
+        case "highlight":
+          setShowHighlightPicker(true)
+          break
+        default:
+          break
+      }
     }
   }, [selectedElement, activeTool])
-
- useEffect(() => {
-  if (selectedElement && selectedElement.type === "oval") {
-    setShowOvalSidebar(true);
-    setShowRectangleSidebar(false);
-    setShowCircleSidebar(false);
-    setShowLineSidebar(false);
-    setShowPenSidebar(false);
-  } else if (activeTool === "oval") {
-    setShowOvalSidebar(true);
-    setShowRectangleSidebar(false);
-    setShowCircleSidebar(false);
-    setShowLineSidebar(false);
-    setShowPenSidebar(false);
-  } else {
-    setShowOvalSidebar(false);
-  }
-}, [selectedElement, activeTool]);
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 relative overflow-auto">
@@ -1632,7 +1727,12 @@ const WhiteBoard = () => {
                       <input
                         type="color"
                         value={squareSettings.strokeColor}
-                        onChange={(e) => setSquareSettings((prev) => ({ ...prev, strokeColor: e.target.value }))}
+                        onChange={(e) =>
+                          setSquareSettings((prev) => ({
+                            ...prev,
+                            strokeColor: e.target.value,
+                          }))
+                        }
                         className="w-full h-8 cursor-pointer"
                         title="Stroke Color"
                       />
@@ -1727,7 +1827,7 @@ const WhiteBoard = () => {
           {/* Circle Settings Sidebar */}
           {showCircleSidebar && <CircleSidebar selectedElement={selectedElement} />}
 
-          {showOvalSidebar && <OvalSidebar selectedElement={selectedElement} />}
+          {showOvalSidebar && <OvalSidebar selectedElement={selectedElement} onChange={handleOvalSettingChange} />}
 
           {/* Line Settings Sidebar */}
           {showLineSidebar && <LineSidebar selectedElement={selectedElement} />}
@@ -1815,8 +1915,12 @@ const WhiteBoard = () => {
                   {/* Canvas */}
                   {!page.isHidden && (
                     <>
+                      {/* 2. Update Canvas component props */}
                       <Canvas
                         customSize={canvasSize}
+                        // onHideSidebars={() => setShowOvalSidebar(false)} // REMOVE THIS LINE
+                        onShowOvalSidebar={() => setShowOvalSidebar(true)}
+                        onHideOvalSidebar={handleHideOvalSidebar} // ADD THIS LINE
                         elements={page.elements}
                         backgroundColor={page.backgroundColor}
                         isLocked={page.isLocked}
@@ -1931,15 +2035,7 @@ const WhiteBoard = () => {
                 />
               )}
             {/* Add Page Button */}
-            <div className="border-t border-b w-[1100px] border-gray-400 flex justify-center">
-              <button
-                onClick={addPage}
-                className="flex items-center gap-2 px-4 py-2 text-black font-semibold hover:bg-gray-200 rounded-md transition-colors"
-              >
-                <Plus className="text-black" />
-                Add page
-              </button>
-            </div>
+
           </div>
         </div>
       </div>
@@ -1953,12 +2049,8 @@ const WhiteBoard = () => {
           }`}
         >
           <HighlightColorPicker
-            color={highlightSettings.fillColor}
-            onChange={(color) => {
-              // Ensure only solid color is set for highlight
-              const solidColor = color.includes("gradient") ? "#FFFF00" : color // Fallback to yellow if gradient
-              setHighlightSettings((prev) => ({ ...prev, fillColor: solidColor }))
-            }}
+            highlightSettings={highlightSettings}
+            onHighlightSettingsChange={handleHighlightSettingsChange}
             showPicker={true}
             onToggle={(shouldShow) => setShowHighlightPicker(shouldShow)}
             onSaveColor={handleSaveColor}
@@ -1969,83 +2061,83 @@ const WhiteBoard = () => {
       )}
 
       <style jsx>{`
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateX(-50%) translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(-50%) translateY(0);
-          }
-        }
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  }
 
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-out;
-        }
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out;
+  }
 
-        .sidebar {
-          position: fixed;
-          left: 0;
-          top: 0;
-          height: 100vh;
-          background: white;
-          box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-          z-index: 9998;
-          transition: transform 0.3s ease;
-          will-change: transform;
-        }
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    background: white;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    z-index: 9998;
+    transition: transform 0.3s ease;
+    will-change: transform;
+  }
 
-        .main-sidebar {
-          width: 280px;
-          transform: translateX(-100%);
-        }
+  .main-sidebar {
+    width: 280px;
+    transform: translateX(-100%);
+  }
 
-        .main-sidebar.open {
-          transform: translateX(0);
-        }
+  .main-sidebar.open {
+    transform: translateX(0);
+  }
 
-        .shapes-sidebar {
-          width: 280px;
-          transform: translateX(-100%);
-        }
+  .shapes-sidebar {
+    width: 280px;
+    transform: translateX(-100%);
+  }
 
-        .shapes-sidebar.open {
-          transform: translateX(280px);
-        }
+  .shapes-sidebar.open {
+    transform: translateX(280px);
+  }
 
-        .tools-button {
-          position: fixed;
-          left: 0;
-          top: 50%;
-          transform: translateY(-50%);
-          z-index: 9999;
-          transition: transform 0.3s ease;
-          will-change: transform;
-        }
+  .tools-button {
+    position: fixed;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 9999;
+    transition: transform 0.3s ease;
+    will-change: transform;
+  }
 
-        .tools-button.main-open {
-          transform: translate(280px, -50%);
-        }
+  .tools-button.main-open {
+    transform: translate(280px, -50%);
+  }
 
-        .tools-button.shapes-open {
-          transform: translate(560px, -50%);
-        }
+  .tools-button.shapes-open {
+    transform: translate(560px, -50%);
+  }
 
-        .active-tool {
-          background-color: var(--primary-color);
-          color: white;
-        }
+  .active-tool {
+    background-color: var(--primary-color);
+    color: white;
+  }
 
-        .active-tool:hover {
-          background-color: var(--primary-color-light);
-        }
+  .active-tool:hover {
+    background-color: var(--primary-color-light);
+  }
 
-        :root {
-          --primary-color: #6b7280;
-          --primary-color-light: #9ca3af;
-        }
-      `}</style>
+  :root {
+    --primary-color: #6b7280;
+    --primary-color-light: #9ca3af;
+  }
+`}</style>
     </div>
   )
 }

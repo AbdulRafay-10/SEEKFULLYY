@@ -72,6 +72,10 @@ const Canvas = ({
   onTransformationEnd, // New prop
   onTextElementClick, // ADDED THIS PROP
   canvasIndex, // Ensure canvasIndex is available
+  onShowOvalSidebar,
+  onHideOvalSidebar,
+  onShowHighlightSidebar, // NEW
+  onHideHighlightSidebar, // NEW
 }) => {
   const canvasRef = useRef(null)
   const canvasWidth = customSize.width
@@ -246,9 +250,18 @@ const Canvas = ({
     }
     ctx.fillRect(0, 0, canvasWidth, canvasHeight)
 
-    // Draw all elements
-    elements.forEach((element) => {
-      // NEW: Only draw text element if it's NOT currently being edited
+    // Separate elements into highlights and other elements
+    const highlightElements = elements.filter((el) => el.type === "highlight")
+    const otherElements = elements.filter((el) => el.type !== "highlight")
+
+    // Draw all highlight elements first
+    highlightElements.forEach((element) => {
+      renderElement(ctx, element)
+    })
+
+    // Then draw all other elements (including text)
+    otherElements.forEach((element) => {
+      // Only draw text element if it's NOT currently being edited
       if (element.type === "text" && element.id === editingTextElementId) {
         return
       }
@@ -287,7 +300,7 @@ const Canvas = ({
     squareSettings,
     textSettings,
     primaryColor,
-    highlightSettings, // Add highlightSettings to dependencies
+    highlightSettings,
   ])
 
   const renderElement = (ctx, element) => {
@@ -313,13 +326,51 @@ const Canvas = ({
         const corners = element.corners !== undefined ? element.corners : squareSettings.corners
 
         if (corners === 4) {
-          if (cornerRadius > 0) {
-            ctx.roundRect(x, y, width, height, cornerRadius)
-          } else {
-            ctx.beginPath()
-            ctx.rect(x, y, width, height)
+          // Use the same robust arcTo logic as for other polygons for 4-corner rounded rectangles
+          const rectPoints = [
+            { x: x, y: y }, // Top-left
+            { x: x + width, y: y }, // Top-right
+            { x: x + width, y: y + height }, // Bottom-right
+            { x: x, y: y + height }, // Bottom-left
+          ]
+
+          ctx.beginPath()
+
+          if (rectPoints.length > 0) {
+            const firstPrevPoint = rectPoints[rectPoints.length - 1]
+            const firstCurrentPoint = rectPoints[0]
+            const firstNextPoint = rectPoints[1 % rectPoints.length]
+
+            const firstMaxRadiusForSegment =
+              Math.min(distance(firstPrevPoint, firstCurrentPoint), distance(firstCurrentPoint, firstNextPoint)) / 2
+            const firstEffectiveCornerRadius = Math.min(cornerRadius, firstMaxRadiusForSegment)
+
+            const startSegment = getPointOnLine(firstPrevPoint, firstCurrentPoint, firstEffectiveCornerRadius)
+            ctx.moveTo(startSegment.x, startSegment.y)
+
+            for (let i = 0; i < rectPoints.length; i++) {
+              const currentPoint = rectPoints[i]
+              const nextPoint = rectPoints[(i + 1) % rectPoints.length]
+              const prevPoint = rectPoints[(i - 1 + rectPoints.length) % rectPoints.length]
+
+              const maxRadiusForSegment =
+                Math.min(distance(prevPoint, currentPoint), distance(currentPoint, nextPoint)) / 2
+              const effectiveCornerRadiusForThisCorner = Math.min(cornerRadius, maxRadiusForSegment)
+
+              const p1 = getPointOnLine(prevPoint, currentPoint, effectiveCornerRadiusForThisCorner)
+              const p2 = getPointOnLine(nextPoint, currentPoint, effectiveCornerRadiusForThisCorner)
+
+              ctx.lineTo(p1.x, p1.y)
+              if (effectiveCornerRadiusForThisCorner > 0) {
+                ctx.arcTo(currentPoint.x, currentPoint.y, p2.x, p2.y, effectiveCornerRadiusForThisCorner)
+              } else {
+                ctx.lineTo(currentPoint.x, currentPoint.y)
+              }
+            }
+            ctx.closePath()
           }
         } else {
+          // Original polygon drawing for corners > 4
           const polygonPoints = generatePolygonPointsForCanvas(corners, x, y, width, height)
           ctx.beginPath()
 
@@ -374,21 +425,21 @@ const Canvas = ({
         ctx.stroke()
         break
 
-        case "oval":
-  ctx.strokeStyle = element.strokeColor !== undefined ? element.strokeColor : squareSettings.strokeColor;
-  ctx.lineWidth = element.strokeWidth !== undefined ? element.strokeWidth : squareSettings.strokeWidth;
-  ctx.fillStyle = element.fillColor !== undefined ? element.fillColor : squareSettings.fillColor;
-  
-  const centerx = Math.floor(element.x + element.width / 2);
-  const centery = Math.floor(element.y + element.height / 2);
-  const radiusX = Math.floor(Math.abs(element.width) / 2);
-  const radiusY = Math.floor(Math.abs(element.height) / 2);
-  
-  ctx.beginPath();
-  ctx.ellipse(centerx, centery, radiusX, radiusY, 0, 0, 2 * Math.PI);
-  ctx.fill();
-  ctx.stroke();
-  break;
+      case "oval":
+        ctx.strokeStyle = element.strokeColor !== undefined ? element.strokeColor : squareSettings.strokeColor
+        ctx.lineWidth = element.strokeWidth !== undefined ? element.strokeWidth : squareSettings.strokeWidth
+        ctx.fillStyle = element.fillColor !== undefined ? element.fillColor : squareSettings.fillColor
+
+        const centerx = Math.floor(element.x + element.width / 2)
+        const centery = Math.floor(element.y + element.height / 2)
+        const radiusX = Math.floor(Math.abs(element.width) / 2)
+        const radiusY = Math.floor(Math.abs(element.height) / 2)
+
+        ctx.beginPath()
+        ctx.ellipse(centerx, centery, radiusX, radiusY, 0, 0, 2 * Math.PI)
+        ctx.fill()
+        ctx.stroke()
+        break
 
       case "line":
         ctx.strokeStyle = element.strokeColor !== undefined ? element.strokeColor : squareSettings.strokeColor
@@ -536,11 +587,17 @@ const Canvas = ({
         const highlightY = Math.floor(element.y)
         const highlightWidth = Math.floor(element.width)
         const highlightHeight = Math.floor(element.height)
+        // Use element's cornerRadius if defined, otherwise fallback to highlightSettings.cornerRadius
+        const highlightCornerRadius =
+          element.cornerRadius !== undefined ? element.cornerRadius : highlightSettings.cornerRadius
 
         ctx.beginPath()
-        ctx.rect(highlightX, highlightY, highlightWidth, highlightHeight)
+        if (highlightCornerRadius > 0) {
+          ctx.roundRect(highlightX, highlightY, highlightWidth, highlightHeight, highlightCornerRadius)
+        } else {
+          ctx.rect(highlightX, highlightY, highlightWidth, highlightHeight)
+        }
         ctx.fill()
-        // No stroke
         break
     }
 
@@ -640,66 +697,55 @@ const Canvas = ({
   }
 
   const isPointInElement = (x, y, element) => {
-  if (element.type === "line") {
-    const dist = distanceToLine(x, y, element.x1, element.y1, element.x2, element.y2);
-    return dist < 10;
-  } else if (element.type === "pen") {
-    if (!element.path || element.path.length === 0) return false;
-    return element.path.some((point) => {
-      const dist = Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2);
-      return dist < 10;
-    });
-  } else if (element.type === "text") {
-    const tempCanvas = document.createElement("canvas");
-    const tempCtx = tempCanvas.getContext("2d");
-    tempCtx.font = `${element.bold ? "bold " : ""}${
-      element.italic ? "italic " : ""
-    }${element.fontSize || textSettings.fontSize}px ${
-      element.fontFamily || textSettings.fontFamily
-    }`;
-    let textToDraw = element.text || "";
-    if (element.uppercase) textToDraw = textToDraw.toUpperCase();
-    const { width: measuredWidth, height: measuredHeight } = measureWrappedText(
-      tempCtx,
-      textToDraw,
-      element.width,
-      element.fontSize || textSettings.fontSize,
-      element.fontFamily || textSettings.fontFamily,
-      element.bold,
-      element.italic,
-      element.uppercase,
-      element.letterSpacing || textSettings.letterSpacing
-    );
-    let boxX = element.x;
-    if (element.align === "center") {
-      boxX = element.x + (element.width - measuredWidth) / 2;
-    } else if (element.align === "right") {
-      boxX = element.x + (element.width - measuredWidth);
+    if (element.type === "line") {
+      const dist = distanceToLine(x, y, element.x1, element.y1, element.x2, element.y2)
+      return dist < 10
+    } else if (element.type === "pen") {
+      if (!element.path || element.path.length === 0) return false
+      return element.path.some((point) => {
+        const dist = Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2)
+        return dist < 10
+      })
+    } else if (element.type === "text") {
+      const tempCanvas = document.createElement("canvas")
+      const tempCtx = tempCanvas.getContext("2d")
+      tempCtx.font = `${element.bold ? "bold " : ""}${element.italic ? "italic " : ""}${element.fontSize || textSettings.fontSize}px ${element.fontFamily || textSettings.fontFamily}`
+      let textToDraw = element.text || ""
+      if (element.uppercase) textToDraw = textToDraw.toUpperCase()
+      const { width: measuredWidth, height: measuredHeight } = measureWrappedText(
+        tempCtx,
+        textToDraw,
+        element.width,
+        element.fontSize || textSettings.fontSize,
+        element.fontFamily || textSettings.fontFamily,
+        element.bold,
+        element.italic,
+        element.uppercase,
+        element.letterSpacing || textSettings.letterSpacing,
+      )
+      let boxX = element.x
+      if (element.align === "center") {
+        boxX = element.x + (element.width - measuredWidth) / 2
+      } else if (element.align === "right") {
+        boxX = element.x + (element.width - measuredWidth)
+      }
+      const boxY = element.y
+      return x >= boxX && x <= boxX + measuredWidth && y >= boxY && y <= boxY + measuredHeight
+    } else if (element.type === "oval") {
+      const centerX = element.x + element.width / 2
+      const centerY = element.y + element.height / 2
+      const radiusX = Math.abs(element.width) / 2
+      const radiusY = Math.abs(element.height) / 2
+
+      // Check if point is inside the oval using ellipse equation
+      const normalizedX = (x - centerX) / radiusX
+      const normalizedY = (y - centerY) / radiusY
+      return normalizedX * normalizedX + normalizedY * normalizedY <= 1
+    } else {
+      // Default rectangle detection
+      return x >= element.x && x <= element.x + element.width && y >= element.y && y <= element.y + element.height
     }
-    const boxY = element.y;
-    return (
-      x >= boxX && x <= boxX + measuredWidth && y >= boxY && y <= boxY + measuredHeight
-    );
-  } else if (element.type === "oval") {
-  const centerX = element.x + element.width / 2;
-  const centerY = element.y + element.height / 2;
-  const radiusX = Math.abs(element.width) / 2;
-  const radiusY = Math.abs(element.height) / 2;
-  
-  // Check if point is inside the oval using ellipse equation
-  const normalizedX = (x - centerX) / radiusX;
-  const normalizedY = (y - centerY) / radiusY;
-  return normalizedX * normalizedX + normalizedY * normalizedY <= 1;
-} else {
-    // Default rectangle detection
-    return (
-      x >= element.x &&
-      x <= element.x + element.width &&
-      y >= element.y &&
-      y <= element.y + element.height
-    );
   }
-};
 
   const distanceToLine = (px, py, x1, y1, x2, y2) => {
     const A = px - x1
@@ -786,156 +832,178 @@ const Canvas = ({
   }
 
   const handleMouseDown = (e) => {
-  if (isLocked) return;
+    if (isLocked) return
 
-  const { x, y } = getMousePosition(e);
+    const { x, y } = getMousePosition(e)
 
-  if (editingTextElementId) {
-    return;
-  }
-
-  if (activeTool === "text") {
-    setSelectedElement(null);
-    onAddTextAtClick(x, y);
-    return;
-  }
-
-  if (activeTool === "select") {
-    if (selectedElement) {
-      const handle = getResizeHandle(x, y, selectedElement);
-      if (handle) {
-        setIsResizing(true);
-        setResizeHandle(handle);
-        setStartPoint({ x, y });
-        onTransformationStart();
-        return;
-      }
+    if (editingTextElementId) {
+      return
     }
 
-    let clickedElement = null;
-    for (let i = elements.length - 1; i >= 0; i--) {
-      if (isPointInElement(x, y, elements[i])) {
-        clickedElement = elements[i];
-        break;
-      }
+    if (activeTool === "text") {
+      setSelectedElement(null)
+      onAddTextAtClick(x, y)
+      return
     }
 
-    if (clickedElement) {
-      setSelectedElement(clickedElement);
-      setIsDragging(true);
-      setStartPoint({ x, y });
-      onTransformationStart();
-
-      // Show the appropriate sidebar based on element type
-      if (clickedElement.type === "oval" && onShowOvalSidebar) {
-        onShowOvalSidebar();
+    if (activeTool === "select") {
+      if (selectedElement) {
+        const handle = getResizeHandle(x, y, selectedElement)
+        if (handle) {
+          setIsResizing(true)
+          setResizeHandle(handle)
+          setStartPoint({ x, y })
+          onTransformationStart()
+          return
+        }
       }
 
-      if (clickedElement.type === "text" && onTextElementClick) {
-        onTextElementClick(clickedElement, canvasIndex);
+      let clickedElement = null
+      for (let i = elements.length - 1; i >= 0; i--) {
+        if (isPointInElement(x, y, elements[i])) {
+          clickedElement = elements[i]
+          break
+        }
       }
-      return;
-    } else {
-      setSelectedElement(null);
-      if (onHideSidebars) {
-        onHideSidebars();
+
+      if (clickedElement) {
+        setSelectedElement(clickedElement)
+        setIsDragging(true)
+        setStartPoint({ x, y })
+        onTransformationStart()
+
+        // Show the appropriate sidebar based on element type
+        if (clickedElement.type === "oval" && onShowOvalSidebar) {
+          onShowOvalSidebar()
+        } else if (clickedElement.type === "highlight" && onShowHighlightSidebar) {
+          // NEW
+          onShowHighlightSidebar()
+        } else {
+          // If a non-oval/non-highlight element is selected, hide these sidebars
+          if (onHideOvalSidebar) {
+            onHideOvalSidebar()
+          }
+          if (onHideHighlightSidebar) {
+            // NEW
+            onHideHighlightSidebar()
+          }
+        }
+
+        if (clickedElement.type === "text" && onTextElementClick) {
+          onTextElementClick(clickedElement, canvasIndex)
+        }
+        return
+      } else {
+        setSelectedElement(null)
+        // If clicking on empty canvas, hide the oval and highlight sidebars
+        if (onHideOvalSidebar) {
+          onHideOvalSidebar()
+        }
+        if (onHideHighlightSidebar) {
+          // NEW
+          onHideHighlightSidebar()
+        }
       }
+      return
     }
-    return;
+
+    // Hide oval and highlight sidebars when starting to draw any shape
+    if (typeof onHideOvalSidebar === "function") {
+      onHideOvalSidebar()
+    }
+    if (typeof onHideHighlightSidebar === "function") {
+      // NEW
+      onHideHighlightSidebar()
+    }
+
+    setIsDrawing(true)
+    setSelectedElement(null)
+    setStartPoint({ x, y })
+
+    const newElement = {
+      id: Date.now(),
+      x,
+      y,
+    }
+
+    switch (activeTool) {
+      case "rectangle":
+        newElement.type = "rectangle"
+        newElement.width = 0
+        newElement.height = 0
+        newElement.corners = squareSettings.corners
+        newElement.cornerRadius = squareSettings.cornerRadius
+        newElement.strokeWidth = squareSettings.strokeWidth
+        newElement.opacity = squareSettings.opacity
+        newElement.fillColor = squareSettings.fillColor
+        newElement.strokeColor = squareSettings.strokeColor
+        setCurrentElement(newElement)
+        break
+
+      case "circle":
+        newElement.type = "circle"
+        newElement.width = 0
+        newElement.height = 0
+        newElement.fillColor = squareSettings.fillColor
+        newElement.strokeColor = squareSettings.strokeColor
+        newElement.strokeWidth = squareSettings.strokeWidth
+        newElement.opacity = squareSettings.opacity
+        setCurrentElement(newElement)
+        break
+
+      case "oval":
+        newElement.type = "oval"
+        newElement.width = 0
+        newElement.height = 0
+        newElement.fillColor = squareSettings.fillColor
+        newElement.strokeColor = squareSettings.strokeColor
+        newElement.strokeWidth = squareSettings.strokeWidth
+        newElement.opacity = squareSettings.opacity
+        setCurrentElement(newElement)
+        break
+
+      case "line":
+        newElement.type = "line"
+        newElement.x1 = x
+        newElement.y1 = y
+        newElement.x2 = x
+        newElement.y2 = y
+        newElement.width = 0
+        newElement.height = 0
+        newElement.strokeColor = squareSettings.strokeColor
+        newElement.strokeWidth = squareSettings.strokeWidth
+        newElement.opacity = squareSettings.opacity
+        setCurrentElement(newElement)
+        break
+
+      case "pen":
+        newElement.type = "pen"
+        newElement.path = [{ x, y }]
+        newElement.width = 0
+        newElement.height = 0
+        newElement.strokeColor = squareSettings.strokeColor
+        newElement.strokeWidth = squareSettings.strokeWidth
+        newElement.opacity = squareSettings.opacity
+        setPenPath([{ x, y }])
+        setCurrentElement(newElement)
+        break
+
+      case "highlight":
+        newElement.type = "highlight"
+        newElement.width = 0
+        newElement.height = 0
+        newElement.fillColor = highlightSettings.fillColor
+        newElement.opacity = highlightSettings.opacity
+        newElement.strokeWidth = 0
+        newElement.strokeColor = "rgba(0,0,0,0)"
+        newElement.cornerRadius = highlightSettings.cornerRadius // NEW: Add cornerRadius to new highlight
+        setCurrentElement(newElement)
+        break
+
+      default:
+        return
+    }
   }
-
-  // Hide all sidebars when starting to draw
-  if (typeof onHideSidebars === "function") {
-    onHideSidebars();
-  }
-
-  setIsDrawing(true);
-  setSelectedElement(null);
-  setStartPoint({ x, y });
-
-  const newElement = {
-    id: Date.now(),
-    x,
-    y,
-  };
-
-  switch (activeTool) {
-    case "rectangle":
-      newElement.type = "rectangle";
-      newElement.width = 0;
-      newElement.height = 0;
-      newElement.corners = squareSettings.corners;
-      newElement.cornerRadius = squareSettings.cornerRadius;
-      newElement.strokeWidth = squareSettings.strokeWidth;
-      newElement.opacity = squareSettings.opacity;
-      newElement.fillColor = squareSettings.fillColor;
-      newElement.strokeColor = squareSettings.strokeColor;
-      setCurrentElement(newElement);
-      break;
-
-    case "circle":
-      newElement.type = "circle";
-      newElement.width = 0;
-      newElement.height = 0;
-      newElement.fillColor = squareSettings.fillColor;
-      newElement.strokeColor = squareSettings.strokeColor;
-      newElement.strokeWidth = squareSettings.strokeWidth;
-      newElement.opacity = squareSettings.opacity;
-      setCurrentElement(newElement);
-      break;
-
-    case "oval":
-      newElement.type = "oval";
-      newElement.width = 0;
-      newElement.height = 0;
-      newElement.fillColor = squareSettings.fillColor;
-      newElement.strokeColor = squareSettings.strokeColor;
-      newElement.strokeWidth = squareSettings.strokeWidth;
-      newElement.opacity = squareSettings.opacity;
-      setCurrentElement(newElement);
-      break;
-
-    case "line":
-      newElement.type = "line";
-      newElement.x1 = x;
-      newElement.y1 = y;
-      newElement.x2 = x;
-      newElement.y2 = y;
-      newElement.width = 0;
-      newElement.height = 0;
-      newElement.strokeColor = squareSettings.strokeColor;
-      newElement.strokeWidth = squareSettings.strokeWidth;
-      newElement.opacity = squareSettings.opacity;
-      setCurrentElement(newElement);
-      break;
-
-    case "pen":
-      newElement.type = "pen";
-      newElement.path = [{ x, y }];
-      newElement.width = 0;
-      newElement.height = 0;
-      newElement.strokeColor = squareSettings.strokeColor;
-      newElement.strokeWidth = squareSettings.strokeWidth;
-      newElement.opacity = squareSettings.opacity;
-      setPenPath([{ x, y }]);
-      setCurrentElement(newElement);
-      break;
-
-    case "highlight":
-      newElement.type = "highlight";
-      newElement.width = 0;
-      newElement.height = 0;
-      newElement.fillColor = highlightSettings.fillColor;
-      newElement.opacity = highlightSettings.opacity;
-      newElement.strokeWidth = 0;
-      newElement.strokeColor = "rgba(0,0,0,0)";
-      setCurrentElement(newElement);
-      break;
-
-    default:
-      return;
-  }
-};
 
   useEffect(() => {
     if (editingText) {
@@ -945,6 +1013,13 @@ const Canvas = ({
       return () => clearInterval(cursorIntervalRef.current)
     }
   }, [editingText])
+
+  const handleOvalSettingChange = (newSettings) => {
+    if (!selectedElement || selectedElement.type !== "oval") return
+    const updatedElements = elements.map((el) => (el.id === selectedElement.id ? { ...el, ...newSettings } : el))
+    onElementsChange(updatedElements, false) // false: discrete operation
+    // Don't call onHideSidebars here!
+  }
 
   const handleDoubleClick = (e) => {
     if (isLocked || activeTool !== "select") return
@@ -963,7 +1038,7 @@ const Canvas = ({
       setSelectedElement(clickedElement)
       const canvasElement = canvasRef.current
       const canvasRect = canvasElement.getBoundingClientRect()
-      
+
       // Viewport-relative rect of the canvas
 
       const scaleX = canvasRect.width / canvasElement.width
@@ -979,19 +1054,16 @@ const Canvas = ({
 
       // FIXED: Pass Number.POSITIVE_INFINITY to get the true unwrapped width
       const { width: unwrappedTextWidth } = measureWrappedText(
-  tempCtx,
-  textToDraw,
-  Number.POSITIVE_INFINITY, // Ensure no wrapping
-  clickedElement.fontSize || textSettings.fontSize,
-  clickedElement.fontFamily || textSettings.fontFamily,
-  clickedElement.bold,
-  clickedElement.italic,
-  clickedElement.uppercase,
-  clickedElement.letterSpacing || textSettings.letterSpacing,
-)
-
-
-
+        tempCtx,
+        textToDraw,
+        Number.POSITIVE_INFINITY, // Ensure no wrapping
+        clickedElement.fontSize || textSettings.fontSize,
+        clickedElement.fontFamily || textSettings.fontFamily,
+        clickedElement.bold,
+        clickedElement.italic,
+        clickedElement.uppercase,
+        clickedElement.letterSpacing || textSettings.letterSpacing,
+      )
 
       // Calculate single line height based on font size and line height
       const singleLineHeight =
@@ -1225,11 +1297,11 @@ const Canvas = ({
           setCurrentElement(updatedElement)
           break
 
-          case "oval":
-  updatedElement.width = x - startPoint.x;
-  updatedElement.height = y - startPoint.y;
-  setCurrentElement(updatedElement);
-  break;
+        case "oval":
+          updatedElement.width = x - startPoint.x
+          updatedElement.height = y - startPoint.y
+          setCurrentElement(updatedElement)
+          break
 
         case "pen":
           const newPath = [...penPath, { x, y }]
