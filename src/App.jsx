@@ -35,7 +35,7 @@ function App() {
         <Routes>
           {/* Pages that use sidebar */}
           <Route element={<MainLayout />}>
-            <Route path="/" element={<HomePage />} />
+            <Route path="/home" element={<HomePage />} />
             <Route path="/study" element={<StudyNote />} />
             <Route path="/more" element={<More />} />
             <Route path="/ai" element={<AISeeker />} />
@@ -56,7 +56,7 @@ function App() {
 
           {/* Pages without sidebar */}
           <Route path="/create-account" element={<CreateAccount />} />
-          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<Login />} />
           <Route path="/whiteboard" element={<Whiteboard />} />
         </Routes>
       </ThemeProvider>

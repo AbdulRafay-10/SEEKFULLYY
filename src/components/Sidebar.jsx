@@ -12,7 +12,7 @@ import { Link, useNavigate } from "react-router-dom"
 import CreateDesignModal from "./home/CreateDesignModal"
 
 const navItems = [
-  { label: "VM", icon: Paint, id: "vm", route: "/" },
+  { label: "VM", icon: Paint, id: "vm", route: "/home" },
   { label: "COMMUNITY", icon: Community, id: "community", route: "/community" },
   { label: "BIBLE", icon: Bible, id: "bible", route: "/bible" },
   { label: "STUDY", icon: Study, id: "study", route: "/study" },

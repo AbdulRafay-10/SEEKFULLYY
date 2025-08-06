@@ -11,7 +11,7 @@ import logo from "../assets/images/Logo.png";
 import { Eye, EyeOff } from "lucide-react";
 import { Link } from "react-router-dom";
 
-const CreateAccount = () => {
+const Login= () => {
   const [showPassword, setShowPassword] = useState(false);
 
   return (
@@ -65,7 +65,7 @@ const CreateAccount = () => {
           </div>
 
           <div className="w-full">
-  <Link to="/">
+  <Link to="/home">
     <Button className="w-full h-[50px] rounded-full text-sm">
       Login
     </Button>
@@ -93,4 +93,4 @@ const CreateAccount = () => {
   );
 };
 
-export default CreateAccount;
+export default Login;
