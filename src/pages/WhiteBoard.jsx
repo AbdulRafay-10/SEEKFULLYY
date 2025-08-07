@@ -20,21 +20,7 @@ import ImageIcon from "../assets/icons/Gallery.png"
 import ShapesIcon from "../assets/icons/Square.png"
 
 // Lucide React icons
-import {
-  Plus,
-  Trash2,
-  Eye,
-  EyeOff,
-  Lock,
-  Unlock,
-  MousePointer,
-  Undo,
-  Redo,
-  ChevronLeft,
-  ChevronRight,
-  AlignEndVerticalIcon,
-  Highlighter,
-} from "lucide-react"
+import { Plus, Trash2, Eye, EyeOff, Lock, Unlock, MousePointer, Undo, Redo, ChevronLeft, ChevronRight, AlignEndVerticalIcon, Highlighter } from 'lucide-react'
 
 const SmallColorWheelIcon = ({ onClick, show }) => {
   if (!show) return null
@@ -100,7 +86,7 @@ const WhiteBoard = () => {
     },
   ])
   const [history, setHistory] = useState([JSON.parse(JSON.stringify(pages))]) // History stores deep copies of the entire pages array
-  const [historyIndex, setHistoryIndex] = useState(0)
+  const [historyIndex, setHistoryUndoRedo] = useState(0)
   const [activeTool, setActiveTool] = useState("select")
 
   const [currentPage, setCurrentPage] = useState(0)
@@ -229,7 +215,7 @@ const WhiteBoard = () => {
       const newHistory = history.slice(0, historyIndex + 1)
       newHistory.push(JSON.parse(JSON.stringify(currentPagesState))) // Deep copy
       setHistory(newHistory)
-      setHistoryIndex(newHistory.length - 1)
+      setHistoryUndoRedo(newHistory.length - 1)
     },
     [history, historyIndex],
   )
@@ -808,7 +794,7 @@ const WhiteBoard = () => {
     if (historyIndex <= 0) return
     const newIndex = historyIndex - 1
     const pagesToRestore = history[newIndex]
-    setHistoryIndex(newIndex)
+    setHistoryUndoRedo(newIndex)
     setPages(JSON.parse(JSON.stringify(pagesToRestore))) // Deep copy to restore
     setElements(pagesToRestore[selectedCanvasIdx]?.elements || []) // Update local elements state
     setSelectedElement(null)
@@ -821,7 +807,7 @@ const WhiteBoard = () => {
     if (historyIndex >= history.length - 1) return
     const newIndex = historyIndex + 1
     const pagesToRestore = history[newIndex]
-    setHistoryIndex(newIndex)
+    setHistoryUndoRedo(newIndex)
     setPages(JSON.parse(JSON.stringify(pagesToRestore))) // Deep copy to restore
     setElements(pagesToRestore[selectedCanvasIdx]?.elements || []) // Update local elements state
     setSelectedElement(null)
@@ -1166,7 +1152,7 @@ const WhiteBoard = () => {
 
   // FIXED: Simplified text edit completion
   const handleTextEditFinished = useCallback(
-    (elementId, newText, screenWidth, screenHeight, screenX, screenY, cancelled = false) => {
+    (elementId, newText, cancelled = false) => {
       const currentElements = pages[selectedCanvasIdx].elements
       const elementIndex = currentElements.findIndex((el) => el.id === elementId)
 
@@ -1176,7 +1162,8 @@ const WhiteBoard = () => {
         return
       }
 
-      const updatedElement = { ...currentElements[elementIndex] }
+      const originalElement = currentElements[elementIndex]
+      let updatedElement = { ...originalElement }
 
       if (cancelled || newText.trim() === "") {
         // Remove empty text elements from the correct canvas
@@ -1191,55 +1178,26 @@ const WhiteBoard = () => {
         return
       }
 
-      // Convert screen coordinates to canvas coordinates for the correct canvas
-      const canvasElements = canvasContainerRef.current?.querySelectorAll(".canvas-element")
-      const canvasElement = canvasElements?.[selectedCanvasIdx]
+      updatedElement.text = newText
 
-      if (canvasElement) {
-        const canvasRect = canvasElement.getBoundingClientRect()
-        const canvasNativeWidth = canvasElement.width // Actual pixel width of the canvas
-        const canvasNativeHeight = canvasElement.height // Actual pixel height of the canvas
+      // Re-measure height based on new text content and ORIGINAL width
+      const tempCanvas = document.createElement("canvas")
+      const tempCtx = tempCanvas.getContext("2d")
+      const { height: newMeasuredHeight } = measureWrappedText(
+        tempCtx,
+        newText, // Use newText for measurement
+        originalElement.width, // Crucially, use the original width for wrapping
+        originalElement.fontSize || textSettings.fontSize,
+        originalElement.fontFamily || textSettings.fontFamily,
+        originalElement.bold,
+        originalElement.italic,
+        originalElement.uppercase,
+        originalElement.letterSpacing || textSettings.letterSpacing,
+      )
 
-        // Calculate scale based on rendered size vs native size
-        const scaleX = canvasNativeWidth / canvasRect.width
-        const scaleY = canvasNativeHeight / canvasRect.height
-
-        // Convert screen coordinates (relative to viewport) to canvas coordinates (relative to canvas's top-left corner in its native pixel space)
-        const canvasX = (screenX - canvasRect.left) * scaleX
-        const canvasY = (screenY - canvasRect.top) * scaleY
-        const canvasWidth = screenWidth * scaleX
-        const canvasHeight = screenHeight * scaleY
-
-        updatedElement.text = newText
-        // When updating the element, we need to re-measure its actual content width and height
-        // to ensure it doesn't wrap unless explicitly resized by the user.
-        const tempCanvas = document.createElement("canvas")
-        const tempCtx = tempCanvas.getContext("2d")
-        tempCtx.font = `${updatedElement.bold ? "bold " : ""}${
-          updatedElement.italic ? "italic " : ""
-        }${updatedElement.fontSize}px ${updatedElement.fontFamily}`
-        tempCtx.letterSpacing = `${updatedElement.letterSpacing || textSettings.letterSpacing}px`
-        let textToDraw = updatedElement.text || ""
-        if (updatedElement.uppercase) textToDraw = textToDraw.toUpperCase()
-
-        const { width: newMeasuredWidth, height: newMeasuredHeight } = measureWrappedText(
-          tempCtx,
-          textToDraw,
-          Number.POSITIVE_INFINITY, // Allow infinite width to get true unwrapped width
-          updatedElement.fontSize,
-          updatedElement.fontFamily,
-          updatedElement.bold,
-          updatedElement.italic,
-          updatedElement.uppercase,
-          updatedElement.letterSpacing,
-        )
-
-        updatedElement.x = canvasX
-        updatedElement.y = canvasY
-        updatedElement.width = newMeasuredWidth // Use the newly measured width
-        updatedElement.height = newMeasuredHeight // Use the newly measured height
-        updatedElement.canvasIndex = selectedCanvasIdx // Ensure canvas association
-      }
+      // Keep original x, y, width. Only update height based on new text content.
+      updatedElement.height = newMeasuredHeight
+      updatedElement.canvasIndex = selectedCanvasIdx // Ensure canvas association
 
       const updatedElements = currentElements.map((el) => (el.id === updatedElement.id ? updatedElement : el))
       const updatedPages = pages.map((p, i) => (i === selectedCanvasIdx ? { ...p, elements: updatedElements } : p))
@@ -1252,7 +1210,7 @@ const WhiteBoard = () => {
       setSelectedElement(updatedElement)
       setSelectedTextElement(updatedElement)
     },
-    [pages, selectedCanvasIdx, addHistorySnapshot],
+    [pages, selectedCanvasIdx, textSettings, addHistorySnapshot],
   )
 
   // NEW: Handle single click on text elements to show toolbar
@@ -1311,52 +1269,14 @@ const WhiteBoard = () => {
         requestAnimationFrame(() => {
           const canvasRect = canvasElement.getBoundingClientRect()
 
-          // Calculate the actual rendered bounding box of the text element in canvas coordinates
-          const tempCanvas = document.createElement("canvas")
-          const tempCtx = tempCanvas.getContext("2d")
-          tempCtx.font = `${selectedTextElement.bold ? "bold " : ""}${
-            selectedTextElement.italic ? "italic " : ""
-          }${selectedTextElement.fontSize}px ${selectedTextElement.fontFamily}`
-          let textToDraw = selectedTextElement.text || ""
-          if (selectedTextElement.uppercase) textToDraw = textToDraw.toUpperCase()
+          const scaleX = canvasRect.width / canvasElement.width
+          const scaleY = canvasRect.height / canvasElement.height
 
-          // FIXED: Pass Number.POSITIVE_INFINITY to get the true unwrapped width
-          const { width: unwrappedTextWidth } = measureWrappedText(
-            tempCtx,
-            textToDraw,
-            Number.POSITIVE_INFINITY, // Get true unwrapped width
-            selectedTextElement.fontSize,
-            selectedTextElement.fontFamily,
-            selectedTextElement.bold,
-            selectedTextElement.italic,
-            selectedTextElement.uppercase,
-            selectedTextElement.letterSpacing,
-          )
-
-          // Calculate single line height based on font size and line height
-          const singleLineHeight =
-            (selectedTextElement.fontSize || textSettings.fontSize) *
-            (selectedTextElement.lineHeight || textSettings.lineHeight || 1.2)
-
-          let boxX_canvas = selectedTextElement.x
-          if (selectedTextElement.align === "center") {
-            boxX_canvas = selectedTextElement.x + (selectedTextElement.width - unwrappedTextWidth) / 2
-          } else if (selectedTextElement.align === "right") {
-            boxX_canvas = selectedTextElement.x + (selectedTextElement.width - unwrappedTextWidth)
-          }
-          const boxY_canvas = selectedTextElement.y
-          // Calculate buffer based on textarea's padding (8px*2) + border (2px*2) + a slightly larger fudge factor
-          const PADDING_BUFFER_HORIZONTAL = 8 * 2 + 2 * 2 + 20 // 16px padding + 4px border + 20px fudge = 40px
-          const PADDING_BUFFER_VERTICAL = 8 * 2 + 2 * 2 + 5 // 16px padding + 4px border + 5px fudge = 25px
-
-          const boxWidth_canvas = unwrappedTextWidth + PADDING_BUFFER_HORIZONTAL
-          const boxHeight_canvas = singleLineHeight + PADDING_BUFFER_VERTICAL // Use single line height + vertical buffer
-
-          // Convert canvas bounding box to viewport screen coordinates
-          const screenX_viewport = boxX_canvas * (canvasRect.width / canvasElement.width) + canvasRect.left
-          const screenY_viewport = boxY_canvas * (canvasRect.height / canvasElement.height) + canvasRect.top
-          const screenWidth_viewport = boxWidth_canvas * (canvasRect.width / canvasElement.width)
-          const screenHeight_viewport = boxHeight_canvas * (canvasRect.height / canvasElement.height)
+          // Calculate screen coordinates based on the selectedTextElement's current canvas dimensions
+          const screenX_viewport = selectedTextElement.x * scaleX + canvasRect.left
+          const screenY_viewport = selectedTextElement.y * scaleY + canvasRect.top
+          const screenWidth_viewport = selectedTextElement.width * scaleX
+          const screenHeight_viewport = selectedTextElement.height * scaleY
 
           // Call handleTextEditStarted to set the screen coordinates for CanvasTextInput
           handleTextEditStarted(
@@ -1952,7 +1872,7 @@ const WhiteBoard = () => {
                         }}
                         activeTool={activeTool}
                         onTextEditComplete={(elementId, newText, isInitialEdit) =>
-                          handleTextEditFinished(elementId, newText, 0, 0, 0, 0, false, isInitialEdit)
+                          handleTextEditFinished(elementId, newText, false, isInitialEdit)
                         }
                         onAddTextAtClick={idx === selectedCanvasIdx ? handleAddTextAtClick : () => {}} // Only allow text addition on selected canvas
                         selectedElement={idx === selectedCanvasIdx ? selectedElement : null} // Only show selection on active canvas
@@ -2004,31 +1924,17 @@ const WhiteBoard = () => {
                   initialText={selectedElement.text}
                   textSettings={selectedElement}
                   isEditing={true}
-                  onTextComplete={(
-                    newText,
-                    rect, // Receive rect object
-                  ) =>
+                  onTextComplete={(newText) =>
                     handleTextEditFinished(
                       selectedElement.id,
                       newText,
-                      rect.width,
-                      rect.height,
-                      rect.x, // Use rect.x for left
-                      rect.y, // Use rect.y for top
                       false,
                     )
                   }
-                  onCancel={(
-                    newText,
-                    rect, // Receive rect object
-                  ) =>
+                  onCancel={(newText) =>
                     handleTextEditFinished(
                       selectedElement.id,
                       newText,
-                      rect.width,
-                      rect.height,
-                      rect.x, // Use rect.x for left
-                      rect.y, // Use rect.y for top
                       true,
                     )
                   }

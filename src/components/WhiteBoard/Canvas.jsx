@@ -842,7 +842,9 @@ const Canvas = ({
 
     if (activeTool === "text") {
       setSelectedElement(null)
-      onAddTextAtClick(x, y)
+      // Ensure new text is not placed off-canvas at the top
+      const initialY = Math.max(y, 20); // Minimum 20px from top
+      onAddTextAtClick(x, initialY)
       return
     }
 
@@ -869,7 +871,38 @@ const Canvas = ({
       if (clickedElement) {
         setSelectedElement(clickedElement)
         setIsDragging(true)
-        setStartPoint({ x, y })
+        
+        // For text elements, store the offset from mouse to *rendered* text top-left
+        if (clickedElement.type === "text") {
+          const tempCanvas = document.createElement("canvas");
+          const tempCtx = tempCanvas.getContext("2d");
+          tempCtx.font = `${clickedElement.bold ? "bold " : ""}${clickedElement.italic ? "italic " : ""}${clickedElement.fontSize || textSettings.fontSize}px ${clickedElement.fontFamily || textSettings.fontFamily}`;
+          let textToMeasure = clickedElement.text || "";
+          if (clickedElement.uppercase) textToMeasure = textToMeasure.toUpperCase();
+
+          const { width: measuredWidth } = measureWrappedText(
+              tempCtx,
+              textToMeasure,
+              clickedElement.width,
+              clickedElement.fontSize || textSettings.fontSize,
+              clickedElement.fontFamily || textSettings.fontFamily,
+              clickedElement.bold,
+              clickedElement.italic,
+              clickedElement.uppercase,
+              clickedElement.letterSpacing || textSettings.letterSpacing,
+          );
+
+          let renderedX = clickedElement.x;
+          if (clickedElement.align === "center") {
+              renderedX = clickedElement.x + (clickedElement.width - measuredWidth) / 2;
+          } else if (clickedElement.align === "right") {
+              renderedX = clickedElement.x + (clickedElement.width - measuredWidth);
+          }
+          setStartPoint({ x: x - renderedX, y: y - clickedElement.y }); // Store offset
+        } else {
+          setStartPoint({ x: x - clickedElement.x, y: y - clickedElement.y }); // Store offset for other elements
+        }
+        
         onTransformationStart()
 
         // Show the appropriate sidebar based on element type
@@ -1039,56 +1072,40 @@ const Canvas = ({
       const canvasElement = canvasRef.current
       const canvasRect = canvasElement.getBoundingClientRect()
 
-      // Viewport-relative rect of the canvas
-
       const scaleX = canvasRect.width / canvasElement.width
       const scaleY = canvasRect.height / canvasElement.height
 
-      // Calculate the actual rendered bounding box of the text element in canvas coordinates
-      const tempCanvas = document.createElement("canvas")
-      const tempCtx = tempCanvas.getContext("2d")
-      tempCtx.font = `${clickedElement.bold ? "bold " : ""}${clickedElement.italic ? "italic " : ""}${clickedElement.fontSize}px ${clickedElement.fontFamily}`
-      tempCtx.letterSpacing = `${clickedElement.letterSpacing || textSettings.letterSpacing}px`
-      let textToDraw = clickedElement.text || ""
-      if (clickedElement.uppercase) textToDraw = textToDraw.toUpperCase()
+      const tempCanvas = document.createElement("canvas");
+      const tempCtx = tempCanvas.getContext("2d");
+      tempCtx.font = `${clickedElement.bold ? "bold " : ""}${clickedElement.italic ? "italic " : ""}${clickedElement.fontSize || textSettings.fontSize}px ${clickedElement.fontFamily || textSettings.fontFamily}`;
+      let textToMeasure = clickedElement.text || "";
+      if (clickedElement.uppercase) textToMeasure = textToMeasure.toUpperCase();
 
-      // FIXED: Pass Number.POSITIVE_INFINITY to get the true unwrapped width
-      const { width: unwrappedTextWidth } = measureWrappedText(
+      const { width: measuredWidth, height: measuredHeight } = measureWrappedText(
         tempCtx,
-        textToDraw,
-        Number.POSITIVE_INFINITY, // Ensure no wrapping
+        textToMeasure,
+        clickedElement.width, // Use element.width as the max width for wrapping
         clickedElement.fontSize || textSettings.fontSize,
         clickedElement.fontFamily || textSettings.fontFamily,
         clickedElement.bold,
         clickedElement.italic,
         clickedElement.uppercase,
         clickedElement.letterSpacing || textSettings.letterSpacing,
-      )
+      );
 
-      // Calculate single line height based on font size and line height
-      const singleLineHeight =
-        (clickedElement.fontSize || textSettings.fontSize) *
-        (clickedElement.lineHeight || textSettings.lineHeight || 1.2)
-
-      let boxX_canvas = clickedElement.x
+      let textRenderX = clickedElement.x;
       if (clickedElement.align === "center") {
-        boxX_canvas = clickedElement.x + (clickedElement.width - unwrappedTextWidth) / 2
+        textRenderX = clickedElement.x + (clickedElement.width - measuredWidth) / 2;
       } else if (clickedElement.align === "right") {
-        boxX_canvas = clickedElement.x + (clickedElement.width - unwrappedTextWidth)
+        textRenderX = clickedElement.x + (clickedElement.width - measuredWidth);
       }
-      const boxY_canvas = clickedElement.y
-      // Calculate buffer based on textarea's padding (8px*2) + border (2px*2) + a slightly larger fudge factor
-      const PADDING_BUFFER_HORIZONTAL = 8 * 2 + 2 * 2 + 20 // 16px padding + 4px border + 20px fudge = 40px
-      const PADDING_BUFFER_VERTICAL = 8 * 2 + 2 * 2 + 5 // 16px padding + 4px border + 5px fudge = 25px
+      const textRenderY = clickedElement.y;
 
-      const boxWidth_canvas = unwrappedTextWidth + PADDING_BUFFER_HORIZONTAL
-      const boxHeight_canvas = singleLineHeight + PADDING_BUFFER_VERTICAL // Use single line height + vertical buffer
-
-      // Convert canvas bounding box to viewport screen coordinates
-      const screenX_viewport = boxX_canvas * scaleX + canvasRect.left
-      const screenY_viewport = boxY_canvas * scaleY + canvasRect.top
-      const screenWidth_viewport = boxWidth_canvas * scaleX
-      const screenHeight_viewport = boxHeight_canvas * scaleY
+      // Scale to viewport coordinates
+      const screenX_viewport = textRenderX * scaleX + canvasRect.left;
+      const screenY_viewport = textRenderY * scaleY + canvasRect.top;
+      const screenWidth_viewport = measuredWidth * scaleX;
+      const screenHeight_viewport = measuredHeight * scaleY;
 
       onStartTextEdit(
         clickedElement.id,
@@ -1099,7 +1116,9 @@ const Canvas = ({
         screenY_viewport,
         true,
         primaryColor,
-      )
+        measuredWidth, // Pass the measured width
+        measuredHeight // Pass the measured height
+      );
     }
   }
 
@@ -1130,41 +1149,75 @@ const Canvas = ({
     }
 
     if (isDragging && selectedElement) {
-      const deltaX = x - startPoint.x
-      const deltaY = y - startPoint.y
-
-      let dragWidth = selectedElement.width
-      let dragHeight = selectedElement.height
+      let newX, newY;
+      let effectiveWidth = selectedElement.width;
+      let effectiveHeight = selectedElement.height;
 
       if (selectedElement.type === "text") {
-        const tempCanvas = document.createElement("canvas")
-        const tempCtx = tempCanvas.getContext("2d")
-        tempCtx.font = `${selectedElement.bold ? "bold " : ""}${selectedElement.italic ? "italic " : ""}${selectedElement.fontSize || textSettings.fontSize}px ${textSettings.fontFamily}`
+        const tempCanvas = document.createElement("canvas");
+        const tempCtx = tempCanvas.getContext("2d");
+        tempCtx.font = `${selectedElement.bold ? "bold " : ""}${selectedElement.italic ? "italic " : ""}${selectedElement.fontSize || textSettings.fontSize}px ${selectedElement.fontFamily || textSettings.fontFamily}`;
+        let textToMeasure = selectedElement.text || "";
+        if (selectedElement.uppercase) textToMeasure = textToMeasure.toUpperCase();
+
         const { width: measuredWidth, height: measuredHeight } = measureWrappedText(
-          tempCtx,
-          selectedElement.text || "",
-          selectedElement.width,
-          selectedElement.fontSize || textSettings.fontSize,
-          selectedElement.fontFamily || textSettings.fontFamily,
-          selectedElement.bold,
-          selectedElement.italic,
-          selectedElement.uppercase,
-          selectedElement.letterSpacing || textSettings.letterSpacing,
-        )
-        dragWidth = measuredWidth
-        dragHeight = measuredHeight
+            tempCtx,
+            textToMeasure,
+            selectedElement.width, // Use element.width as the max width for wrapping
+            selectedElement.fontSize || textSettings.fontSize,
+            selectedElement.fontFamily || textSettings.fontFamily,
+            selectedElement.bold,
+            selectedElement.italic,
+            selectedElement.uppercase,
+            selectedElement.letterSpacing || textSettings.letterSpacing,
+        );
+        effectiveWidth = measuredWidth; // Use measured width for boundary check
+        effectiveHeight = measuredHeight; // Use measured height for boundary check
+
+        // Calculate the current rendered X based on alignment
+        let currentRenderedX = selectedElement.x;
+        if (selectedElement.align === "center") {
+            currentRenderedX = selectedElement.x + (selectedElement.width - measuredWidth) / 2;
+        } else if (selectedElement.align === "right") {
+            currentRenderedX = selectedElement.x + (selectedElement.width - measuredWidth);
+        }
+        let currentRenderedY = selectedElement.y; // Y is always top-aligned for text
+
+        // Calculate new rendered position based on mouse movement and initial offset
+        let newRenderedX = x - startPoint.x;
+        let newRenderedY = y - startPoint.y;
+
+        // Apply canvas boundaries to the *rendered* position
+        newRenderedX = Math.max(0, Math.min(canvasWidth - effectiveWidth, newRenderedX));
+        newRenderedY = Math.max(0, Math.min(canvasHeight - effectiveHeight, newRenderedY));
+
+        // Convert back to element's stored x,y (container's top-left)
+        if (selectedElement.align === "center") {
+            newX = newRenderedX - (selectedElement.width - effectiveWidth) / 2;
+        } else if (selectedElement.align === "right") {
+            newX = newRenderedX - (selectedElement.width - effectiveWidth);
+        } else { // left align
+            newX = newRenderedX;
+        }
+        newY = newRenderedY; // Y is straightforward
+      } else {
+        // For non-text elements, simple delta calculation
+        newX = x - startPoint.x;
+        newY = y - startPoint.y;
+
+        // Apply canvas boundaries for non-text elements
+        newX = Math.max(0, Math.min(canvasWidth - effectiveWidth, newX));
+        newY = Math.max(0, Math.min(canvasHeight - effectiveHeight, newY));
       }
 
-      const newX = Math.max(0, Math.min(canvasWidth - dragWidth, selectedElement.x + deltaX))
-      const newY = Math.max(0, Math.min(canvasHeight - dragHeight, selectedElement.y + deltaY))
-
       const updatedElements = elements.map((element) =>
-        element.id === selectedElement.id ? { ...element, x: newX, y: newY } : element,
-      )
+          element.id === selectedElement.id ? { ...element, x: newX, y: newY } : element,
+      );
 
-      onElementsChange(updatedElements, true) // Pass true for continuous operation
-      setSelectedElement({ ...selectedElement, x: newX, y: newY })
-      setStartPoint({ x, y })
+      onElementsChange(updatedElements, true);
+      setSelectedElement({ ...selectedElement, x: newX, y: newY });
+      // startPoint is already an offset, so no need to update it with current mouse position
+      // It should remain the initial offset from mouse to element's top-left (or rendered top-left for text)
     }
 
     if (isResizing && selectedElement) {
@@ -1258,8 +1311,9 @@ const Canvas = ({
           selectedElement.letterSpacing || textSettings.letterSpacing,
         )
 
-        updatedElement.fontSize = newFontSize
-        updatedElement.height = measuredHeight
+        updatedElement.fontSize = newFontSize;
+        updatedElement.height = measuredHeight; // Ensure height is updated based on new font size and wrapping
+        updatedElement.width = newWidth; // Ensure width is updated based on resize handle
       }
 
       const updatedElements = elements.map((element) => (element.id === selectedElement.id ? updatedElement : element))

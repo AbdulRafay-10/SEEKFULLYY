@@ -1,8 +1,6 @@
 // utils/MeasureWrappedText.js
-// Description: This utility function measures text and wraps it based on a maximum width,
-// returning an array of lines and the total measured width and height.
-const measureWrappedText = (
-  context,
+export default function measureWrappedText(
+  ctx,
   text,
   maxWidth,
   fontSize,
@@ -10,53 +8,52 @@ const measureWrappedText = (
   bold,
   italic,
   uppercase,
-  letterSpacing = 0,
-) => {
-  context.save()
-  context.font = `${bold ? "bold " : ""}${italic ? "italic " : ""}${fontSize}px ${fontFamily}`
-  context.letterSpacing = `${letterSpacing}px`
+  letterSpacing,
+) {
+  ctx.font = `${bold ? "bold " : ""}${italic ? "italic " : ""}${fontSize}px ${fontFamily}`;
+  ctx.letterSpacing = `${letterSpacing}px`;
 
-  const words = text.split(" ")
-  const lines = []
-  let currentLine = words[0] || ""
-  let totalMeasuredWidth = 0
-  let totalMeasuredHeight = 0
+  const lines = [];
+  const paragraphs = text.split('\n'); // First, split by explicit newlines
 
-  if (uppercase) {
-    currentLine = currentLine.toUpperCase()
-  }
+  const lineHeight = fontSize * (1.2); // Assuming a default line height for measurement, consistent with CanvasTextInput
 
-  for (let i = 1; i < words.length; i++) {
-    let word = words[i]
-    if (uppercase) {
-      word = word.toUpperCase()
+  let totalHeight = 0;
+  let maxLineWidth = 0;
+
+  paragraphs.forEach(paragraph => {
+    let currentLine = '';
+    const words = paragraph.split(' '); // Then, split each paragraph by spaces for word wrapping
+
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const testLine = currentLine === '' ? word : currentLine + ' ' + word;
+      const metrics = ctx.measureText(testLine);
+      const testWidth = metrics.width;
+
+      if (testWidth > maxWidth && currentLine !== '') {
+        // If adding the word exceeds maxWidth, push currentLine and start a new one
+        lines.push({ text: currentLine, width: ctx.measureText(currentLine).width });
+        maxLineWidth = Math.max(maxLineWidth, ctx.measureText(currentLine).width);
+        currentLine = word; // Start new line with the current word
+      } else {
+        currentLine = testLine;
+      }
     }
-    const testLine = currentLine + " " + word
-    const metrics = context.measureText(testLine)
-    const testWidth = metrics.width
-
-    if (testWidth > maxWidth && i > 0) {
-      const lineMetrics = context.measureText(currentLine)
-      lines.push({ text: currentLine, width: lineMetrics.width })
-      totalMeasuredWidth = Math.max(totalMeasuredWidth, lineMetrics.width)
-      currentLine = word
-    } else {
-      currentLine = testLine
+    // Push the last line of the paragraph
+    if (currentLine !== '') {
+      lines.push({ text: currentLine, width: ctx.measureText(currentLine).width });
+      maxLineWidth = Math.max(maxLineWidth, ctx.measureText(currentLine).width);
+    } else if (paragraph === '') {
+      // Handle empty lines (e.g., two consecutive \n)
+      lines.push({ text: '', width: 0 });
     }
-  }
+  });
 
-  if (currentLine !== "") {
-    const lineMetrics = context.measureText(currentLine)
-    lines.push({ text: currentLine, width: lineMetrics.width })
-    totalMeasuredWidth = Math.max(totalMeasuredWidth, lineMetrics.width)
-  }
+  totalHeight = lines.length * lineHeight;
 
-  // Calculate total height based on lines and font size
-  const lineHeight = fontSize * 1.2 // Assuming 1.2 as default line height
-  totalMeasuredHeight = lines.length * lineHeight
+  // Reset letter spacing after measurement
+  ctx.letterSpacing = "0px";
 
-  context.restore()
-  return { lines, width: totalMeasuredWidth, height: totalMeasuredHeight }
+  return { width: maxLineWidth, height: totalHeight, lines };
 }
-
-export default measureWrappedText

@@ -7,13 +7,14 @@ import React, {
   forwardRef,
   useImperativeHandle,
 } from "react";
+import measureWrappedText from "../../utils/MeasureWrappedText"; // Import the utility for text measurement
 
 const CanvasTextInput = forwardRef(
   (
     {
       x,
       y,
-      width: initialWidth,
+      width: initialWidth, // This will now act as the maximum width for wrapping
       initialText = "",
       textSettings = {},
       primaryColor = "#000",
@@ -25,7 +26,7 @@ const CanvasTextInput = forwardRef(
   ) => {
     const textareaRef = useRef(null);
     const containerRef = useRef(null);
-    const measureRef = useRef(null);
+    const measureRef = useRef(null); // Used for accurate text measurement
 
     const [text, setText] = useState(initialText);
 
@@ -45,52 +46,93 @@ const CanvasTextInput = forwardRef(
     }));
 
     const adjustSize = () => {
-      if (measureRef.current && textareaRef.current) {
-        measureRef.current.textContent = text || " ";
-
-        const measuredWidth = measureRef.current.offsetWidth;
-
+      if (textareaRef.current && measureRef.current) {
+        const ta = textareaRef.current;
         const fontSizePx = textSettings.fontSize || 16;
+        const fontFamily = textSettings.fontFamily || "Arial, sans-serif";
+        const bold = textSettings.bold;
+        const italic = textSettings.italic;
+        const uppercase = textSettings.uppercase;
+        const letterSpacing = textSettings.letterSpacing || 0;
+        const lineHeight = (textSettings.lineHeight || 1.2) * fontSizePx; // Use lineHeight from settings
+
+        // Temporarily apply styles to measureRef for accurate measurement of wrapped text
+        Object.assign(measureRef.current.style, {
+          fontFamily: fontFamily,
+          fontSize: `${fontSizePx}px`,
+          fontWeight: bold ? "bold" : "normal",
+          fontStyle: italic ? "italic" : "normal",
+          letterSpacing: `${letterSpacing}px`,
+          textTransform: uppercase ? "uppercase" : "none",
+          lineHeight: `${lineHeight}px`,
+          whiteSpace: "pre-wrap", // Crucial for multi-line measurement
+          wordBreak: "break-word", // Allow long words to break
+          width: `${initialWidth}px`, // Constrain width for measurement to simulate wrapping
+          boxSizing: "border-box",
+          padding: "8px", // Match textarea padding
+        });
+
+        // Use a temporary canvas context to measure text accurately
+        const tempCanvas = document.createElement("canvas");
+        const tempCtx = tempCanvas.getContext("2d");
+        tempCtx.font = `${bold ? "bold " : ""}${italic ? "italic " : ""}${fontSizePx}px ${fontFamily}`;
+        tempCtx.letterSpacing = `${letterSpacing}px`;
+
+        const textToMeasure = uppercase ? text.toUpperCase() : text;
+
+        const { width: measuredContentWidth, height: measuredContentHeight } = measureWrappedText(
+          tempCtx,
+          textToMeasure || " ",
+          initialWidth, // Pass the initialWidth as the max width for wrapping
+          fontSizePx,
+          fontFamily,
+          bold,
+          italic,
+          uppercase,
+          letterSpacing
+        );
+
         const padding = 8;
         const borderWidth = 1;
-        const verticalBuffer = 5;
-        const EXTRA_BUFFER = 15; // Extra horizontal buffer to prevent scrollbar flicker
+        const totalHorizontalPadding = 2 * (padding + borderWidth);
+        const totalVerticalPadding = 2 * (padding + borderWidth);
+        const verticalBuffer = 5; // Extra buffer for textarea height
 
-        const totalHorizontal = 2 * (padding + borderWidth);
-        const totalVertical = 2 * (padding + borderWidth);
+        // The width should adjust to content up to initialWidth, then wrap.
+        // If the content is shorter than initialWidth, the input should shrink.
+        // Add a small buffer (e.g., 15px) to prevent horizontal scrollbar flicker
+        const newWidth = Math.max(50, Math.min(measuredContentWidth + totalHorizontalPadding + 15, initialWidth));
 
-        // Add EXTRA_BUFFER here to avoid horizontal scrollbar flickering
-        const newWidth = Math.max(
-          measuredWidth + totalHorizontal + EXTRA_BUFFER,
-          50
-        );
-        const fixedHeight = fontSizePx * 1.3 + totalVertical + verticalBuffer;
+        // The height should always adjust to the measured wrapped text height.
+        const newHeight = measuredContentHeight + totalVerticalPadding + verticalBuffer;
 
         setDimensions((oldDims) => {
+          // Only update if there's a significant change to prevent unnecessary re-renders
           if (
-            Math.abs(oldDims.width - newWidth) > 2 ||
-            Math.abs(oldDims.height - fixedHeight) > 2
+            Math.abs(oldDims.width - newWidth) > 1 ||
+            Math.abs(oldDims.height - newHeight) > 1
           ) {
-            return { width: newWidth, height: fixedHeight };
+            return { width: newWidth, height: newHeight };
           }
           return oldDims;
         });
 
-        textareaRef.current.style.height = `${fixedHeight}px`;
-        textareaRef.current.style.lineHeight = `${fontSizePx * 1.3}px`;
+        // Apply calculated dimensions to the textarea element directly for immediate effect
+        ta.style.width = `${newWidth}px`;
+        ta.style.height = `${newHeight}px`;
+        ta.style.lineHeight = `${lineHeight}px`; // Ensure textarea line-height matches measurement
       }
     };
 
     useEffect(() => {
       adjustSize();
-    }, [text, textSettings.fontFamily, textSettings.fontSize, textSettings.letterSpacing]);
+    }, [text, textSettings.fontFamily, textSettings.fontSize, textSettings.letterSpacing, textSettings.lineHeight, textSettings.bold, textSettings.italic, textSettings.uppercase, initialWidth]);
 
     useEffect(() => {
       if (textareaRef.current && isEditing) {
         const ta = textareaRef.current;
         const fontSizePx = textSettings.fontSize || 16;
-        const verticalBuffer = 5;
-        const lineHeightValue = fontSizePx * 1.3;
+        const lineHeightValue = (textSettings.lineHeight || 1.2) * fontSizePx;
 
         ta.style.fontFamily = textSettings.fontFamily || "Arial, sans-serif";
         ta.style.fontSize = `${fontSizePx}px`;
@@ -99,6 +141,7 @@ const CanvasTextInput = forwardRef(
         ta.style.fontStyle = textSettings.italic ? "italic" : "normal";
         ta.style.color = textSettings.color || "#000";
         ta.style.lineHeight = `${lineHeightValue}px`;
+        ta.style.textTransform = textSettings.uppercase ? "uppercase" : "none"; // Apply uppercase style
 
         if (!initialSelectDoneRef.current) {
           ta.focus();
@@ -136,10 +179,17 @@ const CanvasTextInput = forwardRef(
     const handleBlur = () => handleComplete(false);
 
     const handleKeyDown = (e) => {
+      // If only Enter is pressed, allow default behavior (insert newline)
       if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
+        // Do nothing, let the browser handle the newline
+      }
+      // If Shift + Enter is pressed, complete the editing
+      else if (e.key === "Enter" && e.shiftKey) {
+        e.preventDefault(); // Prevent default newline
         handleComplete(false);
-      } else if (e.key === "Escape") {
+      }
+      // If Escape is pressed, cancel the editing
+      else if (e.key === "Escape") {
         e.preventDefault();
         handleComplete(true);
       }
@@ -147,31 +197,27 @@ const CanvasTextInput = forwardRef(
 
     const handleInputChange = (e) => setText(e.target.value);
 
-    const handleMouseDown = () => {};
+    const handleMouseDown = () => {}; // Keep this to prevent premature blur
 
     if (!isEditing) return null;
 
     return (
       <>
+        {/* Hidden span for accurate text measurement */}
         <span
           ref={measureRef}
           style={{
             position: "absolute",
             top: -9999,
             left: -9999,
-            whiteSpace: "nowrap",
-            fontFamily: textSettings.fontFamily || "Arial, sans-serif",
-            fontSize: `${textSettings.fontSize || 16}px`,
-            letterSpacing: `${textSettings.letterSpacing || 0}px`,
-            fontWeight: textSettings.bold ? "bold" : "normal",
-            fontStyle: textSettings.italic ? "italic" : "normal",
             visibility: "hidden",
             padding: 0,
             margin: 0,
             border: "none",
+            // Styles will be applied dynamically in adjustSize
           }}
         >
-          {text || " "}
+          {/* Content will be set dynamically */}
         </span>
 
         <div
@@ -207,23 +253,23 @@ const CanvasTextInput = forwardRef(
               border: "none",
               backgroundColor: "transparent",
               resize: "none",
-              padding: "8px",
+              padding: "0px",
               fontFamily: textSettings.fontFamily || "Arial, sans-serif",
               fontSize: `${textSettings.fontSize || 16}px`,
               letterSpacing: `${textSettings.letterSpacing || 0}px`,
               fontWeight: textSettings.bold ? "bold" : "normal",
               fontStyle: textSettings.italic ? "italic" : "normal",
-              whiteSpace: "nowrap",
-              overflowX: "auto",
-              overflowY: "hidden",
+              whiteSpace: "pre-wrap", // Crucial for allowing newlines and wrapping
+              overflow: "hidden", // Hide scrollbars as size is adjusted dynamically
               boxSizing: "border-box",
               color: textSettings.color || "#000",
               caretColor: textSettings.color || "#000",
-              lineHeight: `${(textSettings.fontSize || 16) * 1.3}px`,
+              lineHeight: `${(textSettings.fontSize || 16) * 1.3}px`, // Ensure line-height matches measurement
               userSelect: "text",
               MozUserSelect: "text",
               WebkitUserSelect: "text",
               msUserSelect: "text",
+              textTransform: textSettings.uppercase ? "uppercase" : "none", // Apply uppercase style
             }}
           />
         </div>
